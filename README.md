@@ -199,6 +199,7 @@ smoke-tests each native Linux image before publishing. See [releasing](docs/rele
 - [SDK-to-game login and analysis boundaries](docs/sdk-login.md)
 - [SDK HTTP login primitives and encoding](docs/sdk-http.md)
 - [Experimental HTTP API](docs/http-api.md)
+- [Ranking responses and downstream integration](docs/rankings.md)
 - [Protocol provenance and third-party notice](proto/NOTICE.md)
 - Rust API reference: `cargo doc --locked --workspace --no-deps`
 - [Changelog](CHANGELOG.md)
