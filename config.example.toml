@@ -83,3 +83,12 @@ isRoot = ""
 # Legacy alternatives remain supported, never combined with the matching inline source:
 # top-level api_key_file; login.context_file; login.sdk_http_file.
 # See docs/configuration.md for migration and SDK omission semantics.
+
+# Optional independent regional backends, in this same config file.
+# The top-level session is already registered; add only other regions.
+# Example: [regions.en] credentials_file = "en/game-session.json"
+# Then [regions.en.session] with region="en", approved origin/allowed_origins,
+# platform and client_version. No authentication settings are inherited.
+# Region-specific login/accounts/recovery/version_sync use the same sub-sections.
+# Each login.state_dir must be private and different from the other regions.
+# See docs/configuration.md#multiple-regions and docs/path-routes.md.

@@ -1,12 +1,4 @@
-use moenotes_client::{CancellationToken, Client, CredentialProvider, StaticCredentials};
-use moenotes_server::{
-    RouterOptions,
-    accounts::AccountDirectoryClient,
-    cache::CacheOptions,
-    config::Config,
-    managed::{GameRecovery, ManagedClient, Recovery},
-    operator, router_with_options,
-};
+use moenotes_server::{RouterOptions, cache::CacheOptions, config::Config, operator};
 use std::{
     io::{self, IsTerminal, Read},
     path::Path,
@@ -161,105 +153,71 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => return Err("unknown command".into()),
     }
-    if let Some(login) = &config.login {
-        login.validate(&config.session)?;
-    }
-    let provider = if config.accounts.is_some() {
-        None
-    } else if let Some(login) = &config.login {
-        login.credentials(&config.session)?
-    } else {
-        config
-            .credentials_file
-            .as_ref()
-            .map(|p| StaticCredentials::from_file(p))
-            .transpose()?
-    };
-    let client = Arc::new(Client::new(
-        config.session.clone(),
-        provider.as_ref().map(|p| p as &dyn CredentialProvider),
-        config.client_options(),
+    let stop = moenotes_client::CancellationToken::new();
+    let default = Arc::new(moenotes_server::runtime::Runtime::new(
+        config.clone(),
+        stop.clone(),
     )?);
-    if config.recovery.enabled {
-        let login = config.login.as_ref().unwrap();
-        if provider.is_some() {
-            let _ = login.approved_sdk(&config.session)?;
-        }
+    let mut runtimes = vec![default.clone()];
+    let mut backends = Vec::new();
+    if let Some(region) = moenotes_server::regions::Region::from_session(&config.session.region) {
+        backends.push(moenotes_server::regions::RegionBackend {
+            region,
+            client: default.managed.clone(),
+            managed: Some(default.managed.clone()),
+        });
+    }
+    for (region, settings) in &config.regions {
+        let runtime = Arc::new(moenotes_server::runtime::Runtime::new(
+            config.for_region(settings),
+            stop.clone(),
+        )?);
+        backends.push(moenotes_server::regions::RegionBackend {
+            region: *region,
+            client: runtime.managed.clone(),
+            managed: Some(runtime.managed.clone()),
+        });
+        runtimes.push(runtime);
     }
     if command == "auth-status" {
         println!(
             "{}",
-            serde_json::json!({"session":format!("{:?}",client.session_status()),"recovery_enabled":config.recovery.enabled,"accounts_enabled":config.accounts.is_some(),"network_checked":false})
+            serde_json::json!({"session":format!("{:?}",default.client.session_status()),"recovery_enabled":config.recovery.enabled,"accounts_enabled":config.accounts.is_some(),"network_checked":false,"regions":runtimes.iter().filter_map(|r|moenotes_server::regions::Region::from_session(&r.config.session.region).map(|region|(region.as_str(),serde_json::json!({"session":format!("{:?}",r.client.session_status()),"recovery_enabled":r.config.recovery.enabled,"accounts_enabled":r.config.accounts.is_some()})))).collect::<std::collections::BTreeMap<_,_>>()})
         );
         return Ok(());
     }
-    let stop = CancellationToken::new();
-    let accounts = config
-        .accounts
-        .clone()
-        .map(|accounts| {
-            AccountDirectoryClient::new(
-                client.clone(),
-                accounts,
-                config.login.clone().unwrap(),
-                config.session.clone(),
-            )
-            .map(Arc::new)
-        })
-        .transpose()?;
-    let recovery: Option<Arc<dyn Recovery>> = if config.recovery.enabled {
-        if let Some(accounts) = &accounts {
-            Some(accounts.clone())
-        } else {
-            Some(Arc::new(GameRecovery {
-                client: client.clone(),
-                login: config.login.clone().unwrap(),
-                config: config.session.clone(),
-            }))
-        }
-    } else {
-        None
+    let cache_options = CacheOptions {
+        ttl: Duration::from_secs(config.cache_ttl_seconds),
+        capacity: config.cache_capacity,
+        ..Default::default()
     };
-    let mut managed = ManagedClient::new(
-        client.clone(),
-        recovery,
-        Duration::from_secs(config.recovery.cooldown_seconds),
+    let regions = moenotes_server::regions::RegionClients::new(
+        moenotes_server::regions::Region::from_session(&config.session.region),
+        backends,
+        cache_options.clone(),
         stop.clone(),
-    );
-    if let Some(accounts) = &accounts {
-        managed = managed.with_initial_loader(accounts.clone());
-    }
-    let managed = Arc::new(managed);
-    let app = router_with_options(
-        managed.clone(),
+    )?;
+    let app = moenotes_server::router_with_regions(
+        default.managed.clone(),
         config.read_api_key()?,
         RouterOptions {
             mode: config.mode(),
-            managed: Some(managed.clone()),
+            managed: Some(default.managed.clone()),
             access_log: config.access_log,
         },
-        CacheOptions {
-            ttl: Duration::from_secs(config.cache_ttl_seconds),
-            capacity: config.cache_capacity,
-            ..Default::default()
-        },
+        cache_options,
         stop.clone(),
+        regions,
     )?;
     if command == "check-config" {
         println!("Configuration valid; no upstream requests made; session validity not verified.");
         return Ok(());
     }
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
-    let version_task = if config.version_sync.enabled {
-        Some(managed.start_version_sync(client.clone(), config.version_sync.clone()))
-    } else {
-        None
-    };
-    if accounts.is_some() {
-        eprintln!(
-            "{{\"event\":\"account_source\",\"status\":\"deferred\",\"trigger\":\"first_authenticated_query\"}}"
-        );
-    }
+    let version_tasks: Vec<_> = runtimes
+        .iter()
+        .filter_map(|runtime| runtime.start())
+        .collect();
     println!(
         "moenotes-api listening on {} (response mode: {:?})",
         listener.local_addr()?,
@@ -268,24 +226,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     {
         let stop_reload = stop.clone();
-        let managed = managed.clone();
-        let client = client.clone();
+        let runtimes = runtimes.clone();
         tokio::spawn(async move {
             let mut hup = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
                 .expect("SIGHUP handler");
             loop {
-                tokio::select! {_=stop_reload.cancelled()=>break,_=hup.recv()=>{
-                    let success=managed.reload(||{
-                        if let Some(accounts)=&accounts {
-                            client.replace_session(client.session_config(),None)?;
-                            accounts.reset();
-                            return Ok(());
+                tokio::select! {
+                    _ = stop_reload.cancelled() => break,
+                    _ = hup.recv() => {
+                        for runtime in &runtimes {
+                            let success = runtime.reload().is_ok();
+                            eprintln!("{}",serde_json::json!({"event":"session_reload","region":moenotes_server::regions::Region::from_session(&runtime.config.session.region),"success":success}));
                         }
-                        let loaded=if let Some(login)=&config.login{login.credentials(&config.session)}else{config.credentials_file.as_ref().map(|p|StaticCredentials::from_file(p)).transpose()};
-                        loaded.and_then(|p|client.replace_session(client.session_config(),p.as_ref().map(|p|p as &dyn CredentialProvider)))
-                    }).is_ok();
-                    eprintln!("{}",serde_json::json!({"event":"session_reload","success":success}));
-                }}
+                    }
+                }
             }
         });
     }
@@ -301,10 +255,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(not(unix))]
             let _ = tokio::signal::ctrl_c().await;
             stop.cancel();
-            if let Some(task) = version_task {
+            for task in version_tasks {
                 let _ = task.await;
             }
-            managed.wait_idle().await;
+            for runtime in runtimes {
+                runtime.managed.wait_idle().await;
+            }
         })
         .await?;
     Ok(())

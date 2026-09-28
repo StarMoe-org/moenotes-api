@@ -200,6 +200,9 @@ logging in on the signal. See [accounts recovery](accounts.md#reload-and-recover
   recovery, absent local blocks; otherwise 503. Not a periodic health/expiry probe.
 - `GET /v1/status`: authenticated version, response mode, phase, recovery counts,
   safe error category, uptime and HTTP counters; no tokens, player IDs or raw errors.
+  In alpha.6, `regions.tw|en|kr` includes each configured backend's readiness and
+  session/version-sync state; the original top-level session and `/readyz` still
+  describe the default backend. SIGHUP reloads region state independently.
 - `X-Request-Id`: random server correlation ID on every response. JSON stderr logs
   contain only this ID, an allowlisted route name, status and duration. No URL/query,
   headers or bodies. Set `access_log=false` to disable per-request logs.

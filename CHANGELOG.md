@@ -2,6 +2,19 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## 0.1.0-alpha.6 - 2026-09-28
+
+- Add readable path aliases for the query API, comma-separated path lists and
+  explicit `/v1/tw|en|kr/...` selection. Preserve existing query routes and fields.
+- Route the new 11-digit profile path by observed prefixes 2/3/4. Reject unknown
+  ranges, explicit-region mismatches and missing regional configuration without
+  falling back or sending credentials to another region.
+- Support independent regional sessions, credentials, lazy login, version polling,
+  recovery, caches and SIGHUP reload in one private config. HTTP auth and response
+  policy stay global. Expose per-region diagnostics and extend OpenAPI/docs.
+- Add `regions` to the experimental Rust `Config`; direct struct literals must
+  include the field. Existing session snapshot and HTTP query contracts stay intact.
+
 ## 0.1.0-alpha.5 - 2026-09-28
 
 - Discover master/resource versions anonymously at startup and every 60 seconds

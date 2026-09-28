@@ -41,6 +41,11 @@ fn v1_public_openapi_contract_is_frozen() {
     actual.as_object_mut().unwrap().remove("info");
     let expected: serde_json::Value =
         serde_json::from_str(include_str!("../tests/fixtures/v1-openapi.json")).unwrap();
+    // Additive path/region aliases must not alter any established endpoint/schema.
+    actual["paths"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|path, _| expected["paths"].get(path).is_some());
     assert_eq!(
         actual, expected,
         "Public v1 changes require explicit compatibility review"
@@ -422,7 +427,7 @@ async fn all_http_routes_and_openapi() {
         .unwrap();
     let json: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(json["paths"].as_object().unwrap().len(), 17);
+    assert_eq!(json["paths"].as_object().unwrap().len(), 126);
     for (path, name) in ROUTES {
         let method = moenotes_client::METHODS
             .iter()

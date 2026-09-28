@@ -5,6 +5,10 @@ ranking viewers and cutoff tools. It was checked against the request validators,
 protobuf descriptor, JSON serializer and public-field policy on 2026-09-27.
 Examples use **synthetic data**, not live ranking observations.
 
+alpha.6 also supports `/v1/event/123/ranking/1,10,100` and other
+[readable path aliases](path-routes.md). Prefix `/v1/en/` to select a configured
+region. Response schemas and rank-matching rules below are unchanged.
+
 ## Event point cutoffs
 
 ```http
@@ -13,8 +17,9 @@ Authorization: Bearer <HTTP_API_KEY>
 ```
 
 Use GET with no body. The key is issued by the gateway operator; callers do not
-send game credentials. The instance determines the region and upstream account;
-there is no region query parameter.
+send game credentials. The default backend determines the region and upstream
+account unless the path explicitly selects another configured region; there is
+no region query parameter.
 
 | Parameter | Type | Required | Local validation |
 | --- | --- | --- | --- |

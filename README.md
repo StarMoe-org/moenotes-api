@@ -25,7 +25,13 @@ an independent project, not an official or endorsed API.
   expired SDK tokens require operator reauthentication.
 - `moenotes-server`: API-key-protected HTTP queries, short-lived bounded memory
   cache, duplicate-request coalescing and OpenAPI documentation. Read routes use
-  GET with short `/v1` resource paths and URL query parameters.
+  GET with readable `/v1` resource paths, optional filters and compatible query routes.
+
+Since alpha.6 (current source), `/v1/profile/20000000001` selects the configured
+region by ID prefix (2=TW/HK/MO, 3=EN, 4=KR). Other calls use readable paths such as
+`/v1/event/123/ranking/1,10,100`; add `/en` after `/v1` to explicitly select a region.
+Regional credentials, versions and caches are isolated. See [path routes](docs/path-routes.md)
+and [multi-region configuration](docs/configuration.md#multiple-regions).
 
 Queries cover profiles, favorites, event PT rankings and decks, song rankings,
 arena rankings and card trends, circles, gacha probabilities and announcements.
@@ -167,15 +173,16 @@ reports none. Health/status never trigger login; missing accounts leave health a
 for permissions, SDK-readiness confirmation, selection and retry behavior.
 
 Query routes accept
-GET requests with query parameters and no body. Example request:
+GET requests with no body. Path aliases put required parameters in the path:
 
 ```http
-GET /v1/event/ranking?eventId=123&ranks=1&ranks=10&ranks=100
+GET /v1/event/123/ranking/1,10,100
 Authorization: Bearer <HTTP_API_KEY>
 ```
 
-For a profile, use `/v1/profile?playerProfileId=12345678901`. Arrays use repeated
-parameter names; IDs are decimal text. The response is un-enriched protobuf JSON, with 64-bit
+For an automatic-region profile, use `/v1/profile/20000000001`. Existing query
+routes remain supported and use repeated parameter names for arrays; path lists
+use commas. IDs are decimal text. The response is un-enriched protobuf JSON, with 64-bit
 integers represented as decimal strings. Fetch time and cache status are headers.
 See [HTTP API](docs/http-api.md) for all routes, limits and error meanings.
 

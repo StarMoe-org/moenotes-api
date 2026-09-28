@@ -75,7 +75,14 @@ pub fn inspect(path: &Path, fallback: SocketAddr) -> Result<Startup, ClientError
         Err(_) => return Err(invalid()),
     };
     let value: Value = toml::from_str(&text).map_err(|_| invalid())?;
-    for table in ["session", "login", "recovery", "accounts", "version_sync"] {
+    for table in [
+        "session",
+        "login",
+        "recovery",
+        "accounts",
+        "version_sync",
+        "regions",
+    ] {
         if value.get(table).is_some_and(|v| !v.is_table()) {
             return Err(invalid());
         }

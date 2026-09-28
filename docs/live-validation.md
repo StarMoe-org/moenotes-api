@@ -4,6 +4,22 @@ Authorized checks on 2026-09-24 used the Android 1.0.1 protocol and the TW/HK/MO
 region. These are bounded samples, not a service-level or cross-region guarantee.
 No credentials, account fixtures or device identifiers are distributed here.
 
+## Regional Path Routing (2026-09-28)
+
+An authorized alpha.6 Linux amd64 container loaded previously saved TW/HK/MO,
+EN and KR game sessions, without another SDK/game login. Independent Version
+checks updated each region's data pair. The automatic profile path returned the
+expected profile from all three regions; equivalent explicit-region profile paths
+returned cache HIT. Regional circle searches also succeeded, and another TW/HK/MO
+profile query returned the requested profile. All three backends became ready.
+
+Missing bearer authentication returned 401 and an explicit profile-region
+mismatch returned 400. Recovery attempts remained zero. Other path aliases have
+offline request-equivalence, policy, validation and cache-isolation coverage;
+these checks do not claim all live ranking/deck/gacha endpoints were exercised.
+The prefix rule remains an observed regional allocation pattern, not a guarantee
+of future upstream ID assignments.
+
 ## Data Version Synchronization (2026-09-28)
 
 An authorized alpha.5 Linux amd64 check reused a saved TW/HK/MO game session.

@@ -61,12 +61,69 @@ activate queries; SIGHUP does not reread configuration.
 
 ## Region and HTTP Paths
 
-The region is configured in `[session]`, not in the HTTP URL. One instance uses
-one region and its matching approved `origin`/saved session. Profile requests use
-`/v1/profile?playerProfileId=12345678901`; paths such as
-`/v1/tw/profile/12345678901` are not supported. Changing a region label alone does
-not select another upstream or migrate credentials. Use separate instances and
-region-bound state for different regions.
+The default region is configured in `[session]`. `/v1/profile/20000000001`
+automatically selects TW/HK/MO by its 11-digit ID prefix (2=tw, 3=en, 4=kr).
+`/v1/tw/profile/20000000001` explicitly selects the same region. Other path routes
+use the default region unless prefixed with `/v1/tw`, `/v1/en` or `/v1/kr`.
+See [path routes](path-routes.md) for examples covering all query operations.
+The old `/v1/profile?playerProfileId=...` keeps default-region semantics.
+
+## Multiple Regions
+
+Keep the existing top-level configuration for the default backend. Add only the
+other regions to the same private file; do not repeat the default under `[regions]`.
+Example for an existing HK default and separate saved EN/KR game credentials:
+
+```toml
+[regions.en]
+credentials_file = "en/game-session.json"
+[regions.en.session]
+region = "en"
+origin = "https://en.example.invalid"
+allowed_origins = ["https://en.example.invalid"]
+platform = "android"
+client_version = "1.0.1"
+
+[regions.kr]
+credentials_file = "kr/game-session.json"
+[regions.kr.session]
+region = "kr"
+origin = "https://kr.example.invalid"
+allowed_origins = ["https://kr.example.invalid"]
+platform = "android"
+client_version = "1.0.1"
+```
+
+Replace placeholder origins with approved current regional origins. Each credential
+file must already match its session region and origin. Static game credentials
+do not enable SDK recovery. A regional `[login]`/`[accounts]` setup may instead be
+provided as `[regions.en.login]`, `[regions.en.login.context]`,
+`[regions.en.login.sdk_http]`, `[regions.en.accounts]`, `[regions.en.recovery]` and
+`[regions.en.version_sync]`, using the same fields as their top-level equivalents.
+Never combine `credentials_file` with `login` for the same backend.
+
+Authentication sources are explicit per region and are not inherited. Device/SDK
+settings can point to the same authorized source files, and account directories
+may share an authorized SDK account, but each login state directory must be a
+different private directory. The loader still initializes only the selected target
+region on a protected request; startup does not create roles across all regions.
+Create state directories as UID/GID 65532, mode 0700. Paths resolve relative to
+the single config file. Duplicate canonical regions, duplicate origins and shared
+state directories are rejected. Changing `region` alone cannot migrate a saved token.
+
+Version polling defaults to enabled/60 seconds separately in each configured
+region; regional recovery defaults to disabled. Set `[regions.en.version_sync]`
+`enabled=false` to disable it there. Request/cache limits inherit the top-level
+settings, with separate per-region caches/queues, so total cache memory grows with
+the number of configured regions. The HTTP bearer key and response mode are global.
+
+`check-config` and `auth-status` validate all region state without networking or
+reading passwords. Missing/invalid secondary credential files fail startup rather
+than silently using default-region credentials. SIGHUP reloads each backend locally,
+logging success separately; a backend in login/recovery or version update may reject
+reload without affecting the others. Config changes still require a restart.
+Manual `sdk-login`/`game-login` act on the top-level session; use a separate private
+operator config with the target regional settings when provisioning that state.
 
 ## Automatic Data Versions
 

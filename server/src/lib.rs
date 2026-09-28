@@ -7,8 +7,11 @@ mod diagnostics;
 pub mod managed;
 mod openapi;
 pub mod operator;
+mod path_routes;
 pub mod projection;
 mod query_params;
+pub mod regions;
+pub mod runtime;
 pub mod secret;
 pub mod startup;
 
@@ -62,6 +65,7 @@ struct ApiState {
     diagnostics: Arc<diagnostics::Diagnostics>,
     managed: Option<Arc<managed::ManagedClient>>,
     access_log: bool,
+    profiles: Arc<regions::RegionClients>,
 }
 
 pub fn router(
@@ -101,6 +105,24 @@ pub fn router_with_options(
     options: CacheOptions,
     stop: CancellationToken,
 ) -> Result<Router, ClientError> {
+    router_with_regions(
+        client,
+        api_key,
+        router_options,
+        options,
+        stop,
+        regions::RegionClients::default(),
+    )
+}
+
+pub fn router_with_regions(
+    client: Arc<dyn QueryClient>,
+    api_key: Zeroizing<String>,
+    router_options: RouterOptions,
+    options: CacheOptions,
+    stop: CancellationToken,
+    profiles: regions::RegionClients,
+) -> Result<Router, ClientError> {
     options.validate()?;
     if api_key.len() < 32
         || api_key.len() > 4096
@@ -112,13 +134,16 @@ pub fn router_with_options(
         return Err(ClientError::new(ErrorKind::InvalidConfig));
     }
     let state = ApiState {
-        cache: QueryCache::new(client, options, stop),
+        cache: profiles
+            .default_cache()
+            .unwrap_or_else(|| QueryCache::new(client, options, stop)),
         key_hash: Sha256::digest(api_key.as_bytes()).into(),
         admission: Arc::new(tokio::sync::Semaphore::new(64)),
         mode: router_options.mode,
         diagnostics: Arc::new(diagnostics::Diagnostics::default()),
         managed: router_options.managed,
         access_log: router_options.access_log,
+        profiles: Arc::new(profiles),
     };
     let mode = state.mode;
     let mut protected = Router::new().route("/openapi.json", get(move || async move { Json(openapi::document_for(mode)) }))
@@ -126,8 +151,9 @@ pub fn router_with_options(
             let ready=state.managed.as_ref().is_some_and(|m|m.ready());
             (if ready {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},Json(serde_json::json!({"ready":ready})))
         }))
-        .route("/v1/status",get(|State(state):State<ApiState>|async move {Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"responseMode":state.mode,"session":state.managed.as_ref().map(|m|m.status()),"diagnostics":state.diagnostics.snapshot()}))}));
+        .route("/v1/status",get(|State(state):State<ApiState>|async move {Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"responseMode":state.mode,"session":state.managed.as_ref().map(|m|m.status()),"regions":state.profiles.status(),"diagnostics":state.diagnostics.snapshot()}))}));
     if mode != projection::ResponseMode::Disabled {
+        protected = path_routes::install(protected);
         for &(path, name) in ROUTES {
             protected = protected.route(
                 path,
@@ -179,10 +205,15 @@ async fn diagnose(State(state): State<ApiState>, request: Request, next: Next) -
     let _guard = state.diagnostics.begin();
     let start = Instant::now();
     let id = uuid::Uuid::new_v4().to_string();
+    let matched = request
+        .extensions()
+        .get::<axum::extract::MatchedPath>()
+        .map(|path| path.as_str());
     let route = ROUTES
         .iter()
         .find(|(path, _)| *path == request.uri().path())
         .map(|(_, name)| *name)
+        .or_else(|| matched.and_then(path_routes::method_for_path))
         .unwrap_or("support_or_unknown");
     let mut response = next.run(request).await;
     let status = response.status();

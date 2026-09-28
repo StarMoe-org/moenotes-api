@@ -69,6 +69,69 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
     for path in ["/v1/status", "/readyz"] {
         paths.insert(path,json!({"get":{"security":[{"apiKey":[]}],"responses":{"200":{"description":"Sanitized local operational state"},"401":{"description":"Missing API key"},"503":{"description":"Not ready"}}}}));
     }
+    let mut paths: BTreeMap<String, Value> = paths
+        .into_iter()
+        .map(|(path, value)| (path.to_owned(), value))
+        .collect();
+    let existing = paths.clone();
+    for route in crate::path_routes::ROUTES {
+        let Some((legacy, _)) = crate::ROUTES.iter().find(|(_, name)| *name == route.method) else {
+            continue;
+        };
+        let Some(source) = existing.get(*legacy) else {
+            continue;
+        };
+        for region in [None, Some("tw"), Some("en"), Some("kr")] {
+            let path = region
+                .map(|r| format!("/v1/{r}{}", route.path.trim_start_matches("/v1")))
+                .unwrap_or_else(|| route.path.to_owned());
+            let mut operation = source.clone();
+            let get = &mut operation["get"];
+            get["operationId"] = json!(format!("path:{}", path));
+            get["description"] = json!(if route.method == "profile" {
+                "11-digit profile ID: 2 = tw, 3 = en, 4 = kr. Selects the matching configured region; explicit region must agree. Unknown prefixes return 400 and missing regions return 503. No cross-region fallback."
+            } else {
+                "Readable GET alias. Optional filters remain query parameters. Lists in a path use commas, preserving order and duplicates. Path-bound fields cannot also be query parameters. An explicit region selects its independent session; otherwise the default region is used."
+            });
+            for parameter in get["parameters"].as_array_mut().unwrap() {
+                if let Some((path_name, _, list)) = route
+                    .fields
+                    .iter()
+                    .find(|(_, field, _)| parameter["name"] == *field)
+                {
+                    parameter["name"] = json!(path_name);
+                    parameter["in"] = json!("path");
+                    parameter["required"] = json!(true);
+                    parameter["style"] = json!("simple");
+                    parameter["explode"] = json!(false);
+                    parameter["description"] = json!(if *list {
+                        "Comma-separated items; order and duplicates are preserved."
+                    } else {
+                        "URL-encoded path segment."
+                    });
+                    if route.method == "profile" {
+                        parameter["schema"] = json!({"type":"string","pattern":"^[234][0-9]{10}$"});
+                    }
+                }
+            }
+            get["responses"]["200"]["headers"]["X-Moenotes-Region"] = json!({"description":"Selected region for automatic-profile or explicit-region requests.","schema":{"type":"string","enum":["tw","en","kr"]}});
+            paths.insert(path, operation);
+        }
+    }
+    for &(path, _) in crate::ROUTES {
+        let Some(source) = existing.get(path) else {
+            continue;
+        };
+        for region in ["tw", "en", "kr"] {
+            let path = format!("/v1/{region}{}", path.trim_start_matches("/v1"));
+            let mut operation = source.clone();
+            operation["get"]["operationId"] = json!(format!("region:{}", path));
+            operation["get"]["description"] = json!(
+                "Existing query contract against an explicit configured region. Missing regions return 503; no fallback or cross-region credential reuse."
+            );
+            paths.insert(path, operation);
+        }
+    }
     json!({"openapi":"3.1.0","info":{"title":"moenotes-api","version":env!("CARGO_PKG_VERSION"),"description":"Experimental GET query gateway with limited live validation. Not an official or stable API."},
         "paths":paths,"components":{"securitySchemes":{"apiKey":{"type":"http","scheme":"bearer"}},"schemas":schemas}})
 }

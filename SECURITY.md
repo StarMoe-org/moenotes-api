@@ -38,6 +38,11 @@ claimed. Use only accounts and upstream services you are authorized to access.
   account-owner authorization; set `allow_create=false` to reject missing roles.
   Opt-in recovery persists rotated
   game credentials; use a dedicated account and a private writable state directory.
+- Regional path routing selects only configured backends. Each uses its own bound
+  game credentials, SDK/session state and cache. Profile prefix inference never
+  authorizes cross-region token reuse or triggers a fan-out search. All regions
+  share the gateway bearer key and response policy; callers holding that key can
+  reach any configured region. Use separate gateway instances for separate callers.
 
 ## Dependency Advisory Review
 

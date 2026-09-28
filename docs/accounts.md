@@ -43,7 +43,9 @@ buffers on drop on a best-effort basis.
 
 - Enable directory login explicitly with `[accounts]`; its default path is
   `/accounts`. Without this section, existing static/managed login is unchanged.
-- One instance serves **one selected account and one configured region**. One
+- Each regional backend serves **one selected account and one configured region**.
+  A process can host additional [regional backends](configuration.md#multiple-regions).
+  One
   visible `.json` file is selected automatically. Multiple files require `selected`
   to name one basename; there is no account rotation or load balancing.
 - Account files must be regular, non-symlink files, at most 64 KiB, mode 0600 or

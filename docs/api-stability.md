@@ -40,3 +40,8 @@ paths in [HTTP API](http-api.md). Contract tests pin routes, parameters and publ
 schemas in `server/tests/fixtures/v1-openapi.json`; CI never regenerates the fixture.
 Changes to that snapshot require explicit compatibility review. Package-version
 metadata is excluded to avoid irrelevant version-update churn.
+
+alpha.6 adds readable path aliases and explicit-region paths without changing the
+established query endpoints. The baseline test compares every original path and
+schema to the existing snapshot; additive paths have separate routing/OpenAPI
+tests. Automatic profile-region inference is limited to the new profile path.

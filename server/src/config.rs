@@ -2,13 +2,14 @@ use crate::{operator::LoginConfig, projection::ResponseMode};
 use moenotes_client::{ClientError, ClientOptions, ErrorKind, SessionConfig};
 use serde::Deserialize;
 use std::{
+    collections::BTreeMap,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     time::Duration,
 };
 use zeroize::Zeroizing;
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     #[serde(default = "listen")]
@@ -29,6 +30,8 @@ pub struct Config {
     pub api_key: Option<crate::secret::SecretString>,
     pub credentials_file: Option<PathBuf>,
     pub session: SessionConfig,
+    #[serde(default)]
+    pub regions: BTreeMap<crate::regions::Region, RegionConfig>,
     #[serde(default = "timeout")]
     pub timeout_seconds: u64,
     #[serde(default = "interval")]
@@ -39,6 +42,18 @@ pub struct Config {
     pub cache_ttl_seconds: u64,
     #[serde(default = "entries")]
     pub cache_capacity: usize,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RegionConfig {
+    pub session: SessionConfig,
+    pub credentials_file: Option<PathBuf>,
+    pub login: Option<LoginConfig>,
+    pub accounts: Option<crate::accounts::AccountsConfig>,
+    #[serde(default)]
+    pub recovery: RecoveryConfig,
+    #[serde(default)]
+    pub version_sync: VersionSyncConfig,
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -120,6 +135,62 @@ impl Config {
             }
         }
         check_inline_permissions(&value, path)?;
+        config.validate_and_resolve(path)?;
+        let regions = std::mem::take(&mut config.regions);
+        let mut origins = vec![config.session.origin.trim_end_matches('/').to_owned()];
+        let mut state_dirs = Vec::new();
+        if let Some(login) = &config.login {
+            state_dirs.push(state_identity(&login.state_dir)?);
+        }
+        for (region, settings) in regions {
+            if crate::regions::Region::from_session(&config.session.region) == Some(region)
+                || crate::regions::Region::from_session(&settings.session.region) != Some(region)
+            {
+                return Err(invalid());
+            }
+            let mut regional = config.for_region(&settings);
+            regional.validate_and_resolve(path)?;
+            let origin = regional.session.origin.trim_end_matches('/').to_owned();
+            if origins.contains(&origin) {
+                return Err(invalid());
+            }
+            origins.push(origin);
+            if let Some(login) = &regional.login {
+                let state_dir = state_identity(&login.state_dir)?;
+                if state_dirs.contains(&state_dir) {
+                    return Err(invalid());
+                }
+                state_dirs.push(state_dir);
+            }
+            config.regions.insert(
+                region,
+                RegionConfig {
+                    session: regional.session,
+                    credentials_file: regional.credentials_file,
+                    login: regional.login,
+                    accounts: regional.accounts,
+                    recovery: regional.recovery,
+                    version_sync: regional.version_sync,
+                },
+            );
+        }
+        Ok(config)
+    }
+
+    pub fn for_region(&self, settings: &RegionConfig) -> Self {
+        let mut config = self.clone();
+        config.regions.clear();
+        config.session = settings.session.clone();
+        config.credentials_file = settings.credentials_file.clone();
+        config.login = settings.login.clone();
+        config.accounts = settings.accounts.clone();
+        config.recovery = settings.recovery.clone();
+        config.version_sync = settings.version_sync.clone();
+        config
+    }
+
+    fn validate_and_resolve(&mut self, path: &Path) -> Result<(), ClientError> {
+        let config = self;
         if config.cache_capacity > 16384
             || config.cache_ttl_seconds > 3600
             || config.minimum_interval_ms > 60000
@@ -140,7 +211,8 @@ impl Config {
             return Err(invalid());
         }
         config.session.validate()?;
-        let parent = path.parent().unwrap_or(Path::new("."));
+        let config_path = crate::config_file::absolute(path).map_err(|_| invalid())?;
+        let parent = config_path.parent().unwrap_or(Path::new("."));
         if !config.api_key_file.as_os_str().is_empty() && config.api_key_file.is_relative() {
             config.api_key_file = parent.join(&config.api_key_file);
         }
@@ -169,7 +241,7 @@ impl Config {
                 accounts.directory = parent.join(&accounts.directory);
             }
         }
-        Ok(config)
+        Ok(())
     }
 
     pub fn read_api_key(&self) -> Result<Zeroizing<String>, ClientError> {
@@ -196,6 +268,27 @@ impl Config {
             minimum_interval: Duration::from_millis(self.minimum_interval_ms),
             queue_capacity: self.queue_capacity,
         }
+    }
+}
+
+fn state_identity(path: &Path) -> Result<PathBuf, ClientError> {
+    match std::fs::canonicalize(path) {
+        Ok(path) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let absolute = crate::config_file::absolute(path).map_err(|_| invalid())?;
+            let mut normalized = PathBuf::new();
+            for component in absolute.components() {
+                match component {
+                    std::path::Component::ParentDir => {
+                        normalized.pop();
+                    }
+                    std::path::Component::CurDir => {}
+                    component => normalized.push(component),
+                }
+            }
+            Ok(normalized)
+        }
+        Err(_) => Err(invalid()),
     }
 }
 
@@ -229,6 +322,18 @@ pub(crate) fn check_inline_permissions(
     value: &toml::Value,
     path: &Path,
 ) -> Result<(), ClientError> {
+    if let Some(regions) = value.get("regions") {
+        for region in regions.as_table().ok_or_else(invalid)?.values() {
+            check_inline_permissions(region, path)?;
+            if let Some(login) = region.get("login") {
+                for (inline, file) in [("context", "context_file"), ("sdk_http", "sdk_http_file")] {
+                    if login.get(inline).is_some() && login.get(file).is_some() {
+                        return Err(invalid());
+                    }
+                }
+            }
+        }
+    }
     let has_inline = value
         .get("api_key")
         .and_then(toml::Value::as_str)

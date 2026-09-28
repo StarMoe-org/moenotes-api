@@ -42,9 +42,18 @@ enable it for trusted callers until real response comparisons establish a suitab
 public-field policy. Announcement HTML is returned as a JSON string, never executed;
 consumers must not treat it as sanitized HTML. No CDN authorization values are added.
 
-## Queries
+## Readable Path Routes
 
-All query routes use **GET without a request body**, with URL query parameters.
+Since alpha.6, common calls can put required fields directly in the URL path:
+`/v1/profile/20000000001`, `/v1/music/69/ranking`,
+`/v1/event/123/ranking/1,10,100`. Profile IDs automatically select their region;
+other calls use the default or an explicit prefix such as `/v1/en/music/69/ranking`.
+See the [complete path route table](path-routes.md) for all operations and errors.
+These aliases share the existing validation, projection and regional caches.
+
+## Existing Query Routes
+
+The existing routes below use **GET without a request body**, with URL query parameters.
 Names use the protobuf lowerCamelCase spelling. IDs are decimal text, parsed without
 floating-point conversion; do not interchange profile, account and player IDs.
 Repeated fields use repeated keys, not commas, brackets or JSON arrays:
