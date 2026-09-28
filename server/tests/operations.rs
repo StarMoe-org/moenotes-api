@@ -72,6 +72,9 @@ fn invalid_recovery_and_response_modes_are_rejected_offline() {
         "response_mode=\"public\"\nenable_experimental_raw=true",
         "[recovery]\nenabled=true",
         "[recovery]\ncooldown_seconds=0",
+        "[version_sync]\ninterval_seconds=0",
+        "[version_sync]\ninterval_seconds=86401",
+        "[version_sync]\nenabled=\"yes\"",
     ] {
         let path = config(dir.path(), extra);
         let r = Command::new(binary)

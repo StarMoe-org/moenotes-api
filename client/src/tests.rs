@@ -12,6 +12,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use tonic::{Request, Response, Status, metadata::MetadataMap};
 
 mod auth_tests;
+mod version_tests;
 
 fn config() -> SessionConfig {
     SessionConfig {

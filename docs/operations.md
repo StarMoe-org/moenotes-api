@@ -7,6 +7,11 @@ environment variables, logs or saved session state. The optional
 
 ## Configuration
 
+Use `moenotes-server config-path` to find the editable configuration and
+`init-config` to create a private template. New container deployments use the
+persistent `/var/lib/moenotes/config.toml`; legacy mounts still work. See
+[configuration and automatic data versions](configuration.md).
+
 Since `0.1.0-alpha.4`, [single-file configuration](configuration.md) consolidates
 the HTTP key, device context and SDK parameters into `config.toml`. The file-based
 examples below remain compatible. Account passwords still belong in `/accounts`.
@@ -21,15 +26,18 @@ return HTTP 200 with `{"status":"ok"}`. `/readyz` returns 503 with
 error `unconfigured`, without exposing configuration details or business data.
 
 A structured `configuration_missing` startup warning lists missing field names,
-not values. For a completely empty deployment the list includes `config_file`,
-`api_key_file`, `session.region`, `session.origin`, `session.allowed_origins`,
-`session.platform` and `session.client_version`. Blank fields/allowlists and empty
+not values. After template creation, these include `api_key`, session fields and
+the template's login/device/SDK fields. If creation is unavailable, the warning
+also reports `config_file`; `configuration_path` reports the creation error.
+Blank fields/allowlists and empty
 API-key files count as missing. Optional settings are not reported unless they are
 explicitly configured or needed by an enabled login section.
 
 The image uses `0.0.0.0:8080` for this mode so container health probes can reach it.
-Native binaries default to `127.0.0.1:8080`. `MOENOTES_BOOTSTRAP_LISTEN` overrides
-this fallback, and a `listen` value in a partial config takes precedence. Complete
+Without an explicit setting or generated template, native binaries default to
+`127.0.0.1:8080`. `MOENOTES_BOOTSTRAP_LISTEN` takes precedence in health-only mode,
+including over a partial config's `listen`. Without that variable, `listen` takes
+precedence over the native fallback. The generated template uses `0.0.0.0:8080`. Complete
 configs retain their normal listen settings, independent of the bootstrap address.
 There is no image `HEALTHCHECK` or game-availability probe; configure the deployment
 platform's liveness probe to `/health` or `/healthz`, not `/readyz`.
@@ -197,6 +205,9 @@ logging in on the signal. See [accounts recovery](accounts.md#reload-and-recover
   headers or bodies. Set `access_log=false` to disable per-request logs.
 
 Phases: unverified, ready, recovering, recovered, reauthentication_required,
-version_blocked, device_conflict, persistence_failed. Resolve version/device blocks
-explicitly instead of retrying. Whoami is not used as the sole validity probe.
+version_blocked, device_conflict, persistence_failed. The independent version
+poller clears an explicit master mismatch only after discovering a changed pair.
+Client upgrades and device blocks still require operator action. `session.version_sync`
+reports checks, effective versions and failures; Version success does not establish
+authenticated readiness. Whoami is not used as the sole validity probe.
 SIGTERM/Ctrl-C cancels queries and recovery. Cancellation cannot undo a sent login.

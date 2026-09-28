@@ -1,4 +1,6 @@
-# Single-file configuration (available since 0.1.0-alpha.4).
+# Edit this file, run `moenotes-server check-config`, then restart.
+# Find the active path with `moenotes-server config-path` or startup logs.
+# Container default: /var/lib/moenotes/config.toml (mount a persistent volume).
 # Blank settings keep `serve` health-only. Fill with authorized values.
 # Protect populated config with mode 0600 and container UID 65532 ownership.
 # Account passwords stay ONLY in /accounts/*.json, never in this file.
@@ -20,6 +22,12 @@ platform = "android"
 client_version = ""
 # master_version = "" # Configure both versions together only when required.
 # resource_version = ""
+
+# Fetch the current master/resource pair anonymously at startup and periodically.
+# The values above are optional fallback values. No password login is performed.
+[version_sync]
+enabled = true
+interval_seconds = 60
 
 [accounts]
 directory = "/accounts"

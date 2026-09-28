@@ -23,6 +23,8 @@ pub struct Config {
     #[serde(default)]
     pub recovery: RecoveryConfig,
     #[serde(default)]
+    pub version_sync: VersionSyncConfig,
+    #[serde(default)]
     pub api_key_file: PathBuf,
     pub api_key: Option<crate::secret::SecretString>,
     pub credentials_file: Option<PathBuf>,
@@ -37,6 +39,25 @@ pub struct Config {
     pub cache_ttl_seconds: u64,
     #[serde(default = "entries")]
     pub cache_capacity: usize,
+}
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VersionSyncConfig {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    #[serde(default = "version_interval")]
+    pub interval_seconds: u64,
+}
+fn version_interval() -> u64 {
+    60
+}
+impl Default for VersionSyncConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_seconds: version_interval(),
+        }
+    }
 }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -107,6 +128,7 @@ impl Config {
             || config.timeout_seconds > 120
             || config.recovery.cooldown_seconds < 60
             || config.recovery.cooldown_seconds > 86400
+            || !(30..=86400).contains(&config.version_sync.interval_seconds)
             || config.recovery.enabled && config.login.is_none()
             || config.login.is_some() && config.credentials_file.is_some()
             || config.accounts.is_some() && config.login.is_none()

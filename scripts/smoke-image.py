@@ -60,17 +60,16 @@ def unconfigured(image, template=False):
         logs = run("docker", "logs", name, stderr=subprocess.STDOUT, text=True)
         warnings = [json.loads(line) for line in logs.splitlines() if line.startswith("{")]
         warning = next(row for row in warnings if row.get("event") == "configuration_missing")
-        if template:
-            assert {"api_key", "session.origin", "login.context.device_identifier",
-                    "login.sdk_http.app_key"} <= set(warning["missing"])
-        else:
-            assert set(warning["missing"]) == {
-                "config_file", "api_key_file", "session.region", "session.origin",
-                "session.allowed_origins", "session.platform", "session.client_version",
-            }
+        assert {"api_key", "session.origin", "login.context.device_identifier",
+                "login.sdk_http.app_key"} <= set(warning["missing"])
+        actual = json.loads(run("docker", "exec", name, "moenotes-server", "config-path", text=True))
+        expected = "/etc/moenotes/config.toml" if template else "/var/lib/moenotes/config.toml"
+        assert actual["config_path"] == expected and actual["exists"]
+        if not template:
+            assert run("docker", "exec", name, "stat", "-c", "%a", expected, text=True).strip() == "600"
         assert warning["mode"] == "health_only"
         check = subprocess.run(["docker", "exec", name, "moenotes-server", "check-config",
-                                "/etc/moenotes/config.toml"], capture_output=True)
+                                expected], capture_output=True)
         assert check.returncode != 0
         run("docker", "stop", "--time", "5", name)
         assert run("docker", "inspect", "--format", "{{.State.ExitCode}}", name, text=True).strip() == "0"
@@ -92,6 +91,8 @@ def configured(image, accounts, inline=False):
     config = b'''listen = "0.0.0.0:8080"
 response_mode = "disabled"
 api_key_file = "key"
+[version_sync]
+enabled = false
 [session]
 region = "synthetic"
 origin = "https://game.example.invalid"

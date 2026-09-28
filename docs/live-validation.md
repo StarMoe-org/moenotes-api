@@ -4,6 +4,20 @@ Authorized checks on 2026-09-24 used the Android 1.0.1 protocol and the TW/HK/MO
 region. These are bounded samples, not a service-level or cross-region guarantee.
 No credentials, account fixtures or device identifiers are distributed here.
 
+## Data Version Synchronization (2026-09-28)
+
+An authorized alpha.5 Linux amd64 check reused a saved TW/HK/MO game session.
+Starting with stale master/resource settings, the server's anonymous Version poll
+installed the current pair and a protected HTTP circle search returned 200;
+`/readyz` then returned 200. Subsequent periodic checks succeeded both in an
+isolated container and in the deployed instance. Requests without the gateway key
+returned 401. Session files were unchanged, with no SDK/password/game login.
+
+This verifies one current upstream/session sample and periodic discovery, not
+all business routes or future authentication validity. Offline tests cover master
+mismatch recovery, retained authentication/device blocks, malformed responses,
+generation isolation and coexistence with account recovery.
+
 ## Authentication and Persistence
 
 - Rust SDK RSA and email/password login returned success after fixing public-key

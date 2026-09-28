@@ -2,6 +2,7 @@
 pub mod accounts;
 pub mod cache;
 pub mod config;
+pub mod config_file;
 mod diagnostics;
 pub mod managed;
 mod openapi;

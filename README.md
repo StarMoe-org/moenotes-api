@@ -51,7 +51,7 @@ docker run --rm --network none ghcr.io/luoxiadesu/moenotes-api:0.1.0-alpha.4 --v
 ```
 
 Use an exact version or the immutable digest listed in the GitHub Release.
-There is no `latest` tag. Images contain no configuration or game credentials.
+There is no `latest` tag. Images contain no operator configuration or game credentials.
 See [Run the HTTP Server](#run-the-http-server) and [Docker](#docker) before deployment.
 
 ### Build From Source
@@ -110,6 +110,26 @@ The separate [SDK HTTP primitives](docs/sdk-http.md) return pending login result
 they do not bypass SDK checks or implement complete authorization or renewal.
 
 ## Run the HTTP Server
+
+Since alpha.5 (current source), the server creates a private `config.toml` template on first
+startup. In new containers it lives at **`/var/lib/moenotes/config.toml`**: mount
+that directory as a persistent volume, edit the file, validate and restart.
+Existing `/etc/moenotes/config.toml` mounts remain supported. To locate it:
+
+```sh
+moenotes-server config-path
+moenotes-server init-config       # Optional: create without starting the server
+moenotes-server check-config
+```
+
+Set `MOENOTES_CONFIG` to choose a different path. [compose.yaml](compose.yaml)
+provides an editable `./data/config.toml` on the Docker host. See
+[configuration](docs/configuration.md) for Zeabur and permissions.
+
+Fully configured servers now discover master/resource versions anonymously at
+startup and every 60 seconds. Existing account sessions are preserved, and the
+effective versions are visible in `/v1/status`. This does not log in or renew SDK
+credentials. Set `[version_sync] enabled=false` to disable discovery.
 
 Since `0.1.0-alpha.4`, one `config.toml` holds the HTTP key, game session,
 device context and SDK HTTP settings. Account passwords remain in `/accounts`.
@@ -179,7 +199,9 @@ runs as UID/GID 65532; grant that user access to the config and private secret f
 without making secrets group/world-readable. Mount only the necessary directory.
 The example uses the template's `login.state_dir=/var/lib/moenotes`; initialize
 the host state/account directories with mode 0700 and UID 65532 ownership, and
-config/account files with mode 0600. Keep configuration and accounts read-only.
+config/account files with mode 0600. In this legacy layout, keep configuration and
+accounts read-only. The alpha.5 [Compose layout](compose.yaml) instead keeps its
+editable config on the writable state volume and creates a template there.
 Use a TLS reverse proxy before exposing HTTP remotely; TLS termination, firewalling
 and operator key rotation are deployment responsibilities. No permissive CORS or
 remote credential-management endpoint is included.

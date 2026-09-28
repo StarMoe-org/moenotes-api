@@ -1,4 +1,5 @@
 //! Bounded opt-in game-session recovery. Failed queries are never replayed.
+mod versions;
 use crate::operator::LoginConfig;
 use async_trait::async_trait;
 use moenotes_client::{
@@ -24,6 +25,8 @@ pub enum Phase {
     PersistenceFailed,
 }
 struct State {
+    version_updating: bool,
+    version_sync: Option<VersionSyncStatus>,
     phase: Phase,
     attempts: u64,
     successes: u64,
@@ -34,9 +37,20 @@ struct State {
 }
 #[derive(Serialize)]
 pub struct Status {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version_sync: Option<VersionSyncStatus>,
     pub phase: Phase,
     pub recovery_attempts: u64,
     pub recovery_successes: u64,
+    pub last_error: Option<ErrorKind>,
+}
+#[derive(Clone, Serialize)]
+pub struct VersionSyncStatus {
+    pub interval_seconds: u64,
+    pub current: Option<moenotes_client::DataVersions>,
+    pub checks: u64,
+    pub updates: u64,
+    pub last_checked_at: Option<u64>,
     pub last_error: Option<ErrorKind>,
 }
 #[async_trait]
@@ -125,6 +139,8 @@ impl ManagedClient {
             recovery,
             initial_loader: None,
             state: Arc::new(Mutex::new(State {
+                version_updating: false,
+                version_sync: None,
                 phase: Phase::Unverified,
                 attempts: 0,
                 successes: 0,
@@ -144,6 +160,7 @@ impl ManagedClient {
     pub fn status(&self) -> Status {
         let s = self.state.lock().unwrap();
         Status {
+            version_sync: s.version_sync.clone(),
             phase: s.phase,
             recovery_attempts: s.attempts,
             recovery_successes: s.successes,
@@ -164,7 +181,7 @@ impl ManagedClient {
         replace: impl FnOnce() -> Result<(), ClientError>,
     ) -> Result<(), ClientError> {
         let mut s = self.state.lock().unwrap();
-        if s.phase == Phase::Recovering {
+        if s.phase == Phase::Recovering || s.version_updating {
             return Err(ClientError::new(ErrorKind::QueueFull));
         }
         replace()?;
@@ -231,6 +248,9 @@ impl ManagedClient {
                     return;
                 }
             }
+        }
+        if s.version_updating {
+            return;
         }
         let Some(recovery) = (if initial {
             &self.initial_loader

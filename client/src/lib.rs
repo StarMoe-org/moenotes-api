@@ -6,6 +6,9 @@ pub mod sdk_http;
 mod secret_file;
 mod session;
 pub mod transport;
+mod versions;
+
+pub use versions::DataVersions;
 
 pub use error::{ClientError, ErrorKind};
 pub use moenotes_proto::generated;
@@ -82,6 +85,7 @@ struct Session {
     transport: Arc<dyn Transport>,
     cancel: CancellationToken,
     blocked: RwLock<Option<ErrorKind>>,
+    master_mismatch: std::sync::atomic::AtomicBool,
 }
 
 pub struct Client {
@@ -141,6 +145,7 @@ impl Client {
             transport,
             cancel: CancellationToken::new(),
             blocked: RwLock::new(None),
+            master_mismatch: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -250,6 +255,7 @@ impl Client {
                 .call(method, request, metadata, self.options.timeout)
                 .await;
             if let Err(error) = &result
+                && (!method.anonymous || auth::is_login_method(method))
                 && matches!(
                     error.kind,
                     ErrorKind::Authentication | ErrorKind::Version | ErrorKind::DeviceConflict
@@ -261,6 +267,14 @@ impl Client {
                     *blocked,
                     Some(ErrorKind::Version | ErrorKind::DeviceConflict)
                 ) {
+                    let (initial, trailing) = error.business_codes();
+                    session.master_mismatch.store(
+                        trailing
+                            .last()
+                            .or(initial.last())
+                            .is_some_and(|code| code == "MASTER_VERSION_MISMATCH"),
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
                     *blocked = Some(error.kind);
                 }
             }

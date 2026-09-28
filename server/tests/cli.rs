@@ -21,6 +21,8 @@ fn cli_validates_starts_and_shuts_down_without_upstream_calls() {
 listen = "127.0.0.1:0"
 response_mode = "disabled"
 api_key_file = "key"
+[version_sync]
+enabled = false
 [session]
 region = "test"
 origin = "https://game.example.invalid"

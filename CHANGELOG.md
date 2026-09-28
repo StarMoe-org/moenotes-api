@@ -2,6 +2,22 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## 0.1.0-alpha.5 - 2026-09-28
+
+- Discover master/resource versions anonymously at startup and every 60 seconds
+  in configured servers. Atomically update the pair, preserve credentials, reject
+  stale cache/work and clear only explicit master-version mismatches. Retain
+  authentication retry budgets and expose sanitized version-sync diagnostics.
+- Generate private configuration templates on first startup, add `init-config`
+  and `config-path`, and support `MOENOTES_CONFIG`. New containers default to
+  persistent `/var/lib/moenotes/config.toml`; existing legacy mounts still work.
+- Include the template in images and add a Compose example and Zeabur operations
+  instructions. Account passwords remain separate; no automatic SDK renewal.
+- Add `version_sync` to the experimental Rust `Config` and diagnostic `Status`
+  types; direct struct literals must include the new field. HTTP v1 query and
+  snapshot formats are unchanged. `MOENOTES_BOOTSTRAP_LISTEN` now takes precedence
+  over a partial config's listen address in health-only mode.
+
 ## 0.1.0-alpha.4 - 2026-09-25
 
 - Support inline `api_key`, `[login.context]` and `[login.sdk_http]` in one private

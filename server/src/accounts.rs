@@ -270,7 +270,7 @@ impl Recovery for AccountDirectoryClient {
                 return Err(ClientError::new(ErrorKind::Cancelled));
             }
             self.client
-                .replace_session(self.session.clone(), Some(&saved))?;
+                .replace_session(self.client.session_config(), Some(&saved))?;
             eprintln!("{{\"event\":\"account_load\",\"status\":\"saved_session_loaded\"}}");
             return Ok(());
         }

@@ -85,7 +85,10 @@ and their results cannot be labeled or cached with the new generation.
 authentication rejected, version blocked or device conflict. Credential presence
 is never treated as proof of validity. Authentication/version/device errors block
 subsequent authenticated upstream work for that generation; explicit session
-replacement is required to clear version/device blocks. Explicit SDK login can
+replacement is required to clear client-upgrade/device blocks. `refresh_versions`
+performs one anonymous Version call and atomically installs a validated pair,
+retaining credentials and invalidating the old generation. It clears only an
+explicit master mismatch when versions change. Explicit SDK login can
 recover an authentication rejection, but cannot bypass a version/device block.
 Anonymous support remains callable.
 Maintenance is returned as an error without an automatic retry or login loop.
@@ -122,6 +125,6 @@ transfers responsibility for TLS and network policy to the caller.
 ## Not Implemented
 
 Complete SDK authorization workflows, SDK refresh, automatic credential validation,
-automatic version/master synchronization, daily-reset UI, notifications and local
+daily-reset UI, notifications and local
 game state, cross-origin failover, JP support, and gameplay writes. A successful
 offline test or `check-config` does not establish live service availability.

@@ -1,0 +1,20 @@
+services:
+  api:
+    image: moenotes-api:local
+    build: .
+    restart: unless-stopped
+    environment:
+      MOENOTES_CONFIG: /var/lib/moenotes/config.toml
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./data:/var/lib/moenotes
+      # Enable after creating a private accounts directory if using [accounts].
+      # - ./accounts:/accounts:ro
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+# First run: sudo install -d -m 700 -o 65532 -g 65532 data
+# docker compose up -d --build
+# Edit ./data/config.toml using a private editor, then:
+# docker compose exec api moenotes-server check-config
+# docker compose restart api

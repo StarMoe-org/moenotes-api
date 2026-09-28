@@ -4,6 +4,7 @@ ARG RUNTIME_IMAGE=debian:bookworm-slim
 FROM scratch AS inputs
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY LICENSE ./LICENSE
+COPY config.example.toml ./config.example.toml
 COPY proto ./proto
 COPY client ./client
 COPY server ./server
@@ -37,9 +38,12 @@ LABEL org.opencontainers.image.title="moenotes-api" \
 COPY --from=build /src/target/release/moenotes-server /usr/local/bin/moenotes-server
 COPY --from=inputs /LICENSE /usr/share/doc/moenotes-api/LICENSE
 COPY --from=inputs /proto/NOTICE.md /usr/share/doc/moenotes-api/PROTOCOL-NOTICE.md
+COPY --from=inputs /config.example.toml /usr/share/doc/moenotes-api/config.example.toml
+RUN mkdir -p /var/lib/moenotes && chown 65532:65532 /var/lib/moenotes && chmod 700 /var/lib/moenotes
 USER 65532:65532
 # Only used when configuration is missing; configured listen settings are unchanged.
 ENV MOENOTES_BOOTSTRAP_LISTEN=0.0.0.0:8080
+ENV MOENOTES_DEFAULT_CONFIG=/var/lib/moenotes/config.toml
 EXPOSE 8080
 ENTRYPOINT ["moenotes-server"]
-CMD ["serve", "/etc/moenotes/config.toml"]
+CMD ["serve"]

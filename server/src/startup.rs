@@ -75,8 +75,15 @@ pub fn inspect(path: &Path, fallback: SocketAddr) -> Result<Startup, ClientError
         Err(_) => return Err(invalid()),
     };
     let value: Value = toml::from_str(&text).map_err(|_| invalid())?;
-    for table in ["session", "login", "recovery", "accounts"] {
+    for table in ["session", "login", "recovery", "accounts", "version_sync"] {
         if value.get(table).is_some_and(|v| !v.is_table()) {
+            return Err(invalid());
+        }
+    }
+    if let Some(sync) = value.get("version_sync") {
+        let sync: crate::config::VersionSyncConfig =
+            sync.clone().try_into().map_err(|_| invalid())?;
+        if !(30..=86400).contains(&sync.interval_seconds) {
             return Err(invalid());
         }
     }

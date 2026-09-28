@@ -2,6 +2,9 @@ listen = "127.0.0.1:0"
 api_key = "synthetic-bootstrap-api-key-1234567890"
 access_log = false
 
+[version_sync]
+enabled = false
+
 [session]
 region = "test"
 origin = "https://game.invalid"

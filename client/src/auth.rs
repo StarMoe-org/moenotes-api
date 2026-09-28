@@ -327,6 +327,7 @@ impl Client {
                     transport: session.transport.clone(),
                     cancel: CancellationToken::new(),
                     blocked: RwLock::new(None),
+                    master_mismatch: std::sync::atomic::AtomicBool::new(false),
                 });
                 let mut current = self.session.write().unwrap();
                 if current.generation != generation {

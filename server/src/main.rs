@@ -31,12 +31,43 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
     if matches!(command.as_str(), "help" | "--help") {
         println!(
-            "moenotes-server <serve|check-config|sdk-login|game-login|auth-status> <config.toml>\nsdk-login: --password-stdin reads one private JSON object, otherwise prompts without password echo\ngame-login: --confirm-sdk-ready [--allow-create]\nSIGHUP: reload saved session, or reset lazy accounts loading; never log in on the signal.\nmoenotes-server --version"
+            "moenotes-server <serve|init-config|config-path|check-config|sdk-login|game-login|auth-status> [config.toml]\nConfig: explicit path > MOENOTES_CONFIG > existing /etc/moenotes/config.toml > container default > ./config.toml\ninit-config: create a private template without overwriting existing files\nconfig-path: show the actual path without revealing configuration values\nsdk-login: --password-stdin reads one private JSON object, otherwise prompts without password echo\ngame-login: --confirm-sdk-ready [--allow-create]\nSIGHUP: reload saved session, or reset lazy accounts loading; never log in on the signal.\nmoenotes-server --version"
         );
         return Ok(());
     }
-    let path = args.next().ok_or("configuration path required")?;
+    let mut args = args.peekable();
+    let explicit = if args.peek().is_some_and(|arg| !arg.starts_with("--")) {
+        args.next()
+    } else {
+        None
+    };
+    let path = moenotes_server::config_file::resolve(explicit);
     let flags: Vec<_> = args.collect();
+    if matches!(command.as_str(), "init-config" | "config-path") {
+        if !flags.is_empty() {
+            return Err("unexpected argument".into());
+        }
+        let created = if command == "init-config" {
+            moenotes_server::config_file::create(&path)?
+        } else {
+            false
+        };
+        println!(
+            "{}",
+            serde_json::json!({"config_path":moenotes_server::config_file::absolute(&path)?,"exists":path.exists(),"created":created,"action":"Edit this file, run check-config, then restart the service."})
+        );
+        return Ok(());
+    }
+    if command == "serve" {
+        if !flags.is_empty() {
+            return Err("unexpected argument".into());
+        }
+        let outcome = moenotes_server::config_file::create(&path);
+        eprintln!(
+            "{}",
+            serde_json::json!({"event":"configuration_path","path":moenotes_server::config_file::absolute(&path)?,"template_created":matches!(outcome, Ok(true)),"template_error":outcome.err().map(|e|format!("{:?}",e.kind())),"action":"Edit this config.toml, run check-config, then restart; use a persistent volume."})
+        );
+    }
     let config = if command == "serve" {
         if !flags.is_empty() {
             return Err("unexpected argument".into());
@@ -48,6 +79,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         match moenotes_server::startup::inspect(Path::new(&path), fallback)? {
             moenotes_server::startup::Startup::Configured(config) => *config,
             moenotes_server::startup::Startup::Unconfigured { listen, missing } => {
+                let listen = if std::env::var_os("MOENOTES_BOOTSTRAP_LISTEN").is_some() {
+                    fallback
+                } else {
+                    listen
+                };
                 return moenotes_server::startup::serve(listen, &missing).await;
             }
         }
@@ -214,6 +250,11 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let listener = tokio::net::TcpListener::bind(config.listen).await?;
+    let version_task = if config.version_sync.enabled {
+        Some(managed.start_version_sync(client.clone(), config.version_sync.clone()))
+    } else {
+        None
+    };
     if accounts.is_some() {
         eprintln!(
             "{{\"event\":\"account_source\",\"status\":\"deferred\",\"trigger\":\"first_authenticated_query\"}}"
@@ -236,12 +277,12 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
                 tokio::select! {_=stop_reload.cancelled()=>break,_=hup.recv()=>{
                     let success=managed.reload(||{
                         if let Some(accounts)=&accounts {
-                            client.replace_session(config.session.clone(),None)?;
+                            client.replace_session(client.session_config(),None)?;
                             accounts.reset();
                             return Ok(());
                         }
                         let loaded=if let Some(login)=&config.login{login.credentials(&config.session)}else{config.credentials_file.as_ref().map(|p|StaticCredentials::from_file(p)).transpose()};
-                        loaded.and_then(|p|client.replace_session(config.session.clone(),p.as_ref().map(|p|p as &dyn CredentialProvider)))
+                        loaded.and_then(|p|client.replace_session(client.session_config(),p.as_ref().map(|p|p as &dyn CredentialProvider)))
                     }).is_ok();
                     eprintln!("{}",serde_json::json!({"event":"session_reload","success":success}));
                 }}
@@ -260,6 +301,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(not(unix))]
             let _ = tokio::signal::ctrl_c().await;
             stop.cancel();
+            if let Some(task) = version_task {
+                let _ = task.await;
+            }
             managed.wait_idle().await;
         })
         .await?;

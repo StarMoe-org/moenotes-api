@@ -3,6 +3,7 @@
 !Cargo.lock
 !rust-toolchain.toml
 !LICENSE
+!config.example.toml
 !proto/
 !proto/**
 !client/

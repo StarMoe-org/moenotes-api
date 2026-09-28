@@ -102,6 +102,9 @@ Fixing malformed files or changing credentials permits another attempt. An
 initialized/pinned username cannot silently switch when a file is replaced.
 Upstream authentication, version or device blocks are not cleared by file changes;
 they require explicit operator action and reload.
+The independent anonymous version poller can clear an explicit master mismatch
+when it discovers a changed data-version pair. It never reads account files or
+rearms password attempts and pauses while account initialization/recovery runs.
 
 The initialization deadline is 120 seconds. Cancellation cannot undo a login
 already sent upstream. A failure after in-memory session rotation blocks protected

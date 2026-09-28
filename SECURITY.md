@@ -7,7 +7,10 @@ claimed. Use only accounts and upstream services you are authorized to access.
 ## Deployment
 
 - Inline configuration makes `config.toml` a secret file: use owner-only
-  Unix permissions and a read-only mount. HTTP keys and SDK AppKeys must not enter
+  Unix permissions. The persistent-volume setup creates it with mode 0600;
+  a separately provisioned config may instead use a read-only mount. Automatic
+  creation needs a writable parent and never overwrites an existing file.
+  HTTP keys and SDK AppKeys must not enter
   images, logs or Git. Account passwords remain exclusively in `/accounts`.
 
 - Use default public projection for shared callers; raw mode is trusted-operator-only.

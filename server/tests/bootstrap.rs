@@ -73,6 +73,8 @@ fn account_deployment(inline: bool) {
         r#"listen="127.0.0.1:0"
 api_key_file="key"
 access_log=false
+[version_sync]
+enabled=false
 [accounts]
 directory="accounts"
 [login]
@@ -262,7 +264,11 @@ fn empty_deployment_stays_alive_but_check_config_is_strict() {
             .unwrap()
             .read_to_string(&mut error)
             .unwrap();
-        let log: serde_json::Value = serde_json::from_str(error.lines().next().unwrap()).unwrap();
+        let log = error
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|value| value["event"] == "configuration_missing")
+            .unwrap();
         assert_eq!(log["event"], "configuration_missing");
         let fields = log["missing"].as_array().unwrap();
         assert!(

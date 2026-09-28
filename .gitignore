@@ -2,6 +2,7 @@
 /config.toml
 /secrets/
 /accounts/
+/data/
 *.pem
 .env
 __pycache__/
