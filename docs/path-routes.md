@@ -1,5 +1,9 @@
 # Path Routes and Automatic Profile Regions
 
+JP is supported through explicit `/v1/jp/...` routes. Its profile path accepts a
+positive int64 without international prefix inference. The unscoped automatic
+profile path keeps the 2/3/4 rules below; it never guesses JP from a prefix.
+
 Available in alpha.6. Use GET, an empty body and the gateway bearer key. The
 response fields are identical to the corresponding existing query endpoint.
 

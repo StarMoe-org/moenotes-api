@@ -76,12 +76,13 @@ impl ManagedClient {
         status.last_error = result.as_ref().err().map(|e| e.kind);
         if result.is_ok() {
             let config = client.session_config();
-            status.current = config.master_version.zip(config.resource_version).map(
-                |(master_version, resource_version)| moenotes_client::DataVersions {
-                    master_version,
-                    resource_version,
-                },
-            );
+            status.current =
+                config
+                    .master_version
+                    .map(|master_version| moenotes_client::DataVersions {
+                        master_version,
+                        resource_version: config.resource_version.unwrap_or_default(),
+                    });
         }
         if changed {
             status.updates += 1;

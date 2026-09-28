@@ -13,6 +13,7 @@ pub enum Region {
     Tw,
     En,
     Kr,
+    Jp,
 }
 impl Region {
     pub fn as_str(self) -> &'static str {
@@ -20,6 +21,7 @@ impl Region {
             Self::Tw => "tw",
             Self::En => "en",
             Self::Kr => "kr",
+            Self::Jp => "jp",
         }
     }
     pub fn from_session(region: &str) -> Option<Self> {
@@ -27,6 +29,7 @@ impl Region {
             "hk" | "tw" | "hk-tw-mo" => Some(Self::Tw),
             "en" => Some(Self::En),
             "kr" => Some(Self::Kr),
+            "jp" => Some(Self::Jp),
             _ => None,
         }
     }

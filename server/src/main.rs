@@ -25,6 +25,18 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "moenotes-server <serve|init-config|config-path|check-config|sdk-login|game-login|auth-status> [config.toml]\nConfig: explicit path > MOENOTES_CONFIG > existing /etc/moenotes/config.toml > container default > ./config.toml\ninit-config: create a private template without overwriting existing files\nconfig-path: show the actual path without revealing configuration values\nsdk-login: --password-stdin reads one private JSON object, otherwise prompts without password echo\ngame-login: --confirm-sdk-ready [--allow-create]\nSIGHUP: reload saved session, or reset lazy accounts loading; never log in on the signal.\nmoenotes-server --version"
         );
+        println!(
+            "JP: jp-register [config.toml] --allow-create --name NAME.json; jp-check [config.toml]; jp-import-registration [config.toml] --name NAME.json\nAccount directories: init-accounts [ROOT] (default ./accounts)"
+        );
+        return Ok(());
+    }
+    if command == "init-accounts" {
+        let root = args.next().unwrap_or_else(|| "accounts".into());
+        if args.next().is_some() {
+            return Err("unexpected argument".into());
+        }
+        moenotes_server::jp_operator::init_accounts(Path::new(&root))?;
+        println!("Created/verified accounts/international and accounts/jp directories.");
         return Ok(());
     }
     let mut args = args.peekable();
@@ -86,6 +98,24 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Err("accounts mode uses lazy login; use a separate configuration without [accounts] for manual operator login".into());
     }
     match command.as_str() {
+        "jp-import-registration" => {
+            if flags.len() != 2 || flags[0] != "--name" {
+                return Err("requires --name NAME.json".into());
+            }
+            return moenotes_server::jp_operator::import_registration(&config, &flags[1]);
+        }
+        "jp-register" => {
+            if flags.len() != 3 || flags[0] != "--allow-create" || flags[1] != "--name" {
+                return Err("requires --allow-create --name NAME.json".into());
+            }
+            return moenotes_server::jp_operator::register(&config, &flags[2]).await;
+        }
+        "jp-check" => {
+            if !flags.is_empty() {
+                return Err("unexpected argument".into());
+            }
+            return moenotes_server::jp_operator::check(&config).await;
+        }
         "sdk-login" => {
             if flags.iter().any(|f| f != "--password-stdin") {
                 return Err("unknown flag".into());

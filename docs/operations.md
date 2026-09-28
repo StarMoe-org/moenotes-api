@@ -1,5 +1,10 @@
 # Authentication and Operations
 
+JP credential import and explicit operator commands are documented separately in
+[JP accounts](jp-accounts.md). SDK login/recovery below applies to international
+sessions. The common mount separates `international/` passwords and `jp/` game
+credentials; JP does not use OneSDK or automatic registration.
+
 Use a dedicated account: login and recovery may invalidate another device's session.
 There is no HTTP login endpoint. Passwords never enter command-line arguments,
 environment variables, logs or saved session state. The optional
@@ -135,7 +140,7 @@ extract APK/device configuration or ship an AppKey. See [SDK HTTP](sdk-http.md).
 ## Login
 
 This section describes manual CLI login without `[accounts]`. To load private
-`/accounts/*.json` files lazily, see [Lazy Account Directory](accounts.md). That
+`/accounts/international/*.json` files lazily, see [Lazy Account Directory](accounts.md). That
 mode defaults to automatic missing-role creation, subject to pre-login, whereas
 manual CLI login still requires `--allow-create`.
 

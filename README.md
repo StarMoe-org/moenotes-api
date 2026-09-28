@@ -1,7 +1,13 @@
 # moenotes-api
 
 An experimental Rust client and HTTP query gateway for Our Notes, based on
-static analysis of the Android `com.bilibili.sirius` 1.0.1 protocol.
+static analysis of Android `com.bilibili.sirius` 1.0.1 and
+`com.bushiroad.sirius` 1.0.3 protocols.
+
+JP uses a separate game-credential import under `accounts/jp/`; international
+SDK password inputs use `accounts/international/`. Explicit JP query routes,
+one-shot operator registration and migration instructions are documented in
+[JP accounts](docs/jp-accounts.md). The HTTP service never registers JP accounts.
 
 **Experimental, with limited authorized live validation.** SDK password login,
 game login, session persistence and selected queries have passed live checks;
@@ -36,8 +42,8 @@ and [multi-region configuration](docs/configuration.md#multiple-regions).
 Queries cover profiles, favorites, event PT rankings and decks, song rankings,
 arena rankings and card trends, circles, gacha probabilities and announcements.
 There are no gameplay write operations, arbitrary RPC proxy, complete SDK/social
-login workflow, database, historical collector, master-data enrichment or Japanese-release
-compatibility claims. Explicit game login can create an account or affect an
+login workflow, database, historical collector or master-data enrichment. JP support
+uses a separately validated protocol and credential import; full endpoint coverage is not claimed. Explicit game login can create an account or affect an
 existing session; it is not a read-only query and has no HTTP route.
 
 HTTP defaults to a recursive public-field whitelist, omitting `myRank`, `myScore`

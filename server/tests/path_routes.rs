@@ -96,6 +96,70 @@ fn app(mode: ResponseMode, include_en: bool) -> (Router, Arc<Mock>, Arc<Mock>) {
     .unwrap();
     (app, tw, en)
 }
+
+#[tokio::test]
+async fn jp_profile_uses_explicit_region_without_guessing_an_id_prefix() {
+    let jp = Mock::new();
+    let tw = Mock::new();
+    let stop = CancellationToken::new();
+    let options = CacheOptions::default();
+    let regions = RegionClients::new(
+        Some(Region::Tw),
+        vec![
+            RegionBackend {
+                region: Region::Tw,
+                client: tw.clone(),
+                managed: None,
+            },
+            RegionBackend {
+                region: Region::Jp,
+                client: jp.clone(),
+                managed: None,
+            },
+        ],
+        options.clone(),
+        stop.clone(),
+    )
+    .unwrap();
+    let app = router_with_regions(
+        tw.clone(),
+        KEY.to_owned().into(),
+        RouterOptions {
+            mode: ResponseMode::Public,
+            managed: None,
+            access_log: false,
+        },
+        options,
+        stop,
+        regions,
+    )
+    .unwrap();
+    let response = app
+        .clone()
+        .oneshot(request("/v1/jp/profile/50000000001"))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-moenotes-region"], "jp");
+    assert_eq!(
+        app.clone()
+            .oneshot(request("/v1/profile/50000000001"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        app.clone()
+            .oneshot(request("/v1/jp/profile/-1"))
+            .await
+            .unwrap()
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(jp.calls.lock().unwrap().len(), 1);
+    assert!(tw.calls.lock().unwrap().is_empty());
+}
 fn request(path: &str) -> Request<Body> {
     Request::builder()
         .uri(path)

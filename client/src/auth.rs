@@ -156,7 +156,8 @@ impl SdkAuthorization {
     }
 
     fn check_binding(&self, config: &SessionConfig) -> Result<(), ClientError> {
-        if config.platform != "android"
+        if config.region == "jp"
+            || config.platform != "android"
             || self.region != config.region
             || self.origin != origin(&config.origin)?
         {
@@ -328,6 +329,7 @@ impl Client {
                     cancel: CancellationToken::new(),
                     blocked: RwLock::new(None),
                     master_mismatch: std::sync::atomic::AtomicBool::new(false),
+                    jp_override_pending: std::sync::atomic::AtomicBool::new(false),
                 });
                 let mut current = self.session.write().unwrap();
                 if current.generation != generation {

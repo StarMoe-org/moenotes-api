@@ -1,5 +1,11 @@
 # Lazy Account Directory
 
+The shared account root now separates `international/` SDK password inputs and
+`jp/` game credential imports. New international defaults use
+`/accounts/international`; explicit legacy directory settings still work.
+See [JP accounts and migration](jp-accounts.md). The SDK creation/recovery behavior
+below applies only to international sessions; JP never registers automatically.
+
 Available since `0.1.0-alpha.3`, `AccountDirectoryClient` adds lazy account loading
 to the server. Older images do not include it. Use a dedicated, authorized
 account: an authenticated HTTP query can now trigger login and, by default,
@@ -23,7 +29,7 @@ sdk_http_file = "secrets/sdk-http.json"
 state_dir = "secrets/state"
 
 [accounts]
-directory = "/accounts"
+directory = "/accounts/international"
 # selected = "worker.json"
 allow_create = true
 sdk_ready = true
@@ -42,7 +48,7 @@ The loader does not write or modify account files. It zeroizes owned password
 buffers on drop on a best-effort basis.
 
 - Enable directory login explicitly with `[accounts]`; its default path is
-  `/accounts`. Without this section, existing static/managed login is unchanged.
+  `/accounts/international`. Without this section, existing static/managed login is unchanged.
 - Each regional backend serves **one selected account and one configured region**.
   A process can host additional [regional backends](configuration.md#multiple-regions).
   One

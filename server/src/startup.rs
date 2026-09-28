@@ -143,7 +143,8 @@ pub fn inspect(path: &Path, fallback: SocketAddr) -> Result<Startup, ClientError
             validate_api_key(value["api_key"].as_str().ok_or_else(invalid)?)?;
         }
     }
-    if value.get("login").is_some() || value.get("accounts").is_some() {
+    let jp_session = field(&value, "session.region").and_then(Value::as_str) == Some("jp");
+    if value.get("login").is_some() || value.get("accounts").is_some() && !jp_session {
         for key in ["login.context_file", "login.state_dir"] {
             if key == "login.context_file" && field(&value, "login.context").is_some() {
                 continue;
@@ -153,7 +154,8 @@ pub fn inspect(path: &Path, fallback: SocketAddr) -> Result<Startup, ClientError
             }
         }
     }
-    if value.get("accounts").is_some()
+    if !jp_session
+        && value.get("accounts").is_some()
         && field(&value, "login.sdk_http").is_none()
         && string_missing(&value, "login.sdk_http_file")?
     {

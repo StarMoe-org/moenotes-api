@@ -12,6 +12,12 @@ fn invalid() -> ClientError {
 }
 
 pub(crate) fn read(path: &Path) -> Result<Zeroizing<Vec<u8>>, ClientError> {
+    if !std::fs::symlink_metadata(path)
+        .map_err(|_| invalid())?
+        .is_file()
+    {
+        return Err(invalid());
+    }
     let file = std::fs::File::open(path).map_err(|_| invalid())?;
     let meta = file.metadata().map_err(|_| invalid())?;
     if !meta.is_file() || meta.len() > LIMIT as u64 {
@@ -68,6 +74,31 @@ pub(crate) fn create(path: &Path, bytes: &[u8]) -> Result<(), ClientError> {
         temporary.persist_noclobber(path).map_err(|_| invalid())?;
         Ok(())
     }
+}
+
+pub(crate) fn check_new(path: &Path) -> Result<(), ClientError> {
+    if std::fs::symlink_metadata(path).is_ok() {
+        return Err(invalid());
+    }
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let meta = std::fs::symlink_metadata(parent).map_err(|_| invalid())?;
+    if !meta.is_dir() {
+        return Err(invalid());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode() & 0o077 != 0 {
+            return Err(invalid());
+        }
+    }
+    #[cfg(not(unix))]
+    return Err(invalid());
+    #[cfg(unix)]
+    Ok(())
 }
 
 #[cfg(all(test, unix))]

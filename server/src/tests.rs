@@ -427,7 +427,7 @@ async fn all_http_routes_and_openapi() {
         .unwrap();
     let json: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(json["paths"].as_object().unwrap().len(), 126);
+    assert_eq!(json["paths"].as_object().unwrap().len(), 157);
     for (path, name) in ROUTES {
         let method = moenotes_client::METHODS
             .iter()

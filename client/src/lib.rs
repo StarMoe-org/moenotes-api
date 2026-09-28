@@ -1,6 +1,7 @@
 //! Experimental game queries and explicit SDK-to-game login. No automatic retry.
 pub mod auth;
 mod error;
+pub mod jp;
 mod query;
 pub mod sdk_http;
 mod secret_file;
@@ -18,6 +19,7 @@ pub use tokio_util::sync::CancellationToken;
 pub use uuid::Uuid as Generation;
 
 use async_trait::async_trait;
+#[cfg(test)]
 use moenotes_proto::pool;
 use prost_reflect::DynamicMessage;
 use std::{
@@ -86,6 +88,7 @@ struct Session {
     cancel: CancellationToken,
     blocked: RwLock<Option<ErrorKind>>,
     master_mismatch: std::sync::atomic::AtomicBool,
+    jp_override_pending: std::sync::atomic::AtomicBool,
 }
 
 pub struct Client {
@@ -146,6 +149,7 @@ impl Client {
             cancel: CancellationToken::new(),
             blocked: RwLock::new(None),
             master_mismatch: std::sync::atomic::AtomicBool::new(false),
+            jp_override_pending: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -159,6 +163,25 @@ impl Client {
         let transport = Arc::new(GrpcTransport::new(&config)?);
         let new = Arc::new(Self::make_session(config, provider, transport)?);
         let mut current = self.session.write().unwrap();
+        current.cancel.cancel();
+        *current = new;
+        Ok(())
+    }
+
+    /// Install a locally imported credential into the expected generation while
+    /// preserving versions and transport. Never sets a device-override flag.
+    pub fn import_credentials(
+        &self,
+        generation: Generation,
+        provider: &dyn CredentialProvider,
+    ) -> Result<(), ClientError> {
+        let mut current = self.session.write().unwrap();
+        if current.generation != generation {
+            return Err(ClientError::new(ErrorKind::SessionChanged));
+        }
+        let config = current.config.clone();
+        let transport = current.transport.clone();
+        let new = Arc::new(Self::make_session(config, Some(provider), transport)?);
         current.cancel.cancel();
         *current = new;
         Ok(())
@@ -235,6 +258,21 @@ impl Client {
         cancel: CancellationToken,
         finish: impl FnOnce(DynamicMessage) -> Result<T, ClientError>,
     ) -> Result<T, ClientError> {
+        self.run_operation_response(session, method, request, metadata, cancel, |r| {
+            finish(r.message)
+        })
+        .await
+    }
+
+    async fn run_operation_response<T>(
+        &self,
+        session: Arc<Session>,
+        method: Method,
+        request: DynamicMessage,
+        mut metadata: tonic::metadata::MetadataMap,
+        cancel: CancellationToken,
+        finish: impl FnOnce(transport::TransportResponse) -> Result<T, ClientError>,
+    ) -> Result<T, ClientError> {
         let _admission = self
             .admission
             .try_acquire()
@@ -243,16 +281,24 @@ impl Client {
             let mut next = self.serial.lock().await;
             if let Some(kind) = *session.blocked.read().unwrap()
                 && (!method.anonymous
-                    || (auth::is_login_method(method)
+                    || ((auth::is_login_method(method) || method == jp::REGISTER)
                         && matches!(kind, ErrorKind::Version | ErrorKind::DeviceConflict)))
             {
                 return Err(ClientError::new(kind));
             }
             tokio::time::sleep_until(*next).await;
             *next = Instant::now() + self.options.minimum_interval;
+            let override_sent = session.config.region == "jp"
+                && !method.anonymous
+                && session
+                    .jp_override_pending
+                    .load(std::sync::atomic::Ordering::SeqCst);
+            if override_sent {
+                metadata.insert("x-override-device-id", "1".parse().unwrap());
+            }
             let result = session
                 .transport
-                .call(method, request, metadata, self.options.timeout)
+                .call_with_metadata(method, request, metadata, self.options.timeout)
                 .await;
             if let Err(error) = &result
                 && (!method.anonymous || auth::is_login_method(method))
@@ -278,7 +324,12 @@ impl Client {
                     *blocked = Some(error.kind);
                 }
             }
-            let message = result?;
+            let response = result?;
+            if override_sent {
+                session
+                    .jp_override_pending
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+            }
             if cancel.is_cancelled() {
                 return Err(ClientError::new(ErrorKind::Cancelled));
             }
@@ -286,10 +337,10 @@ impl Client {
                 return Err(ClientError::new(ErrorKind::SessionChanged));
             }
             use prost_reflect::ReflectMessage;
-            if message.descriptor().full_name() != method.output {
+            if response.message.descriptor().full_name() != method.output {
                 return Err(ClientError::new(ErrorKind::Protocol));
             }
-            finish(message)
+            finish(response)
         };
         tokio::select! {
             biased;
@@ -331,9 +382,11 @@ impl QueryClient for Client {
         if !query.method().anonymous && session.credentials.is_none() {
             return Err(ClientError::new(ErrorKind::AuthenticationRequired));
         }
-        let method = *query.method();
+        let method = query.method_for_region(&session.config.region)?;
         let request = DynamicMessage::decode(
-            pool().get_message_by_name(method.input).unwrap(),
+            moenotes_proto::pool_for_region(&session.config.region)
+                .get_message_by_name(method.input)
+                .ok_or_else(|| ClientError::new(ErrorKind::Protocol))?,
             query.encode().as_slice(),
         )
         .map_err(|_| ClientError::new(ErrorKind::Protocol))?;

@@ -164,7 +164,7 @@ fn recognized_profile_ranges_and_session_aliases() {
     }
     assert_eq!(Region::from_session("hk"), Some(Region::Tw));
     assert_eq!(Region::from_session("hk-tw-mo"), Some(Region::Tw));
-    assert_eq!(Region::from_session("jp"), None);
+    assert_eq!(Region::from_session("jp"), Some(Region::Jp));
 }
 
 #[test]

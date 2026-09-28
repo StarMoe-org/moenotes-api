@@ -1,5 +1,30 @@
 # Validation Record
 
+## JP credential import and registration — 2026-09-29
+
+124 Rust tests and two doctests passed, together with all-target Clippy, formatting,
+seven release-script tests and Docker exported-input validation. JP coverage
+includes separate descriptor selection, header omission/override rules, profile
+route mapping, master-only versions, private origin-bound import, stale generation
+rejection, no-overwrite registration output and local recovery when device_id is
+omitted. Existing international tests remain enabled.
+
+One explicitly authorized JP test account was created with Register. Its response
+omitted device_id; the first normalizer rejected that assumption after saving the
+raw response. The implementation was corrected and the retained response imported
+locally, with no second registration. A fresh process loaded the credential and
+passed Whoami identity matching, GetPlayerData and JP PlayerService/GetPlayerList.
+HTTP announcements, self profile, favorite status and one music-ranking query
+returned 200; repeated profile lookup returned HIT. The initial protected request
+returned authentication_required while the lazy local loader ran, then the next
+request succeeded. Status showed JP ready and valid version synchronization.
+
+The registered profile ID happened to be 11 digits starting with 5; this observation
+is not generalized into automatic region routing. Explicit `/v1/jp/profile/` is
+required. No password transfer, device takeover, tutorial initialization, SDK login,
+production configuration change or deployment was performed. Private credentials
+and response bodies are retained outside Git and Docker build inputs.
+
 ## Alpha.4 Single-File Configuration
 
 2026-09-25: 98 Rust tests (36 client, 3 protocol, 52 server unit, 7 process

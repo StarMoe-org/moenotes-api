@@ -1,8 +1,12 @@
 # Single-File Configuration
 
+JP credential-only backends use `[regions.jp.accounts]` and `[regions.jp.session]`
+without a login/SDK section. The common account root has `international/` and
+`jp/` subdirectories; see [JP configuration](jp-accounts.md).
+
 Since `0.1.0-alpha.4`, all manually entered server, region, device and SDK settings
 can live in `config.toml`. Older images require the legacy file-based settings.
-Account passwords remain in `/accounts/*.json`; session snapshots remain in a
+Account passwords remain in `/accounts/international/*.json`; session snapshots remain in a
 persistent writable state directory. No passwords are accepted in the config.
 
 ## Find and Create the File (alpha.5)

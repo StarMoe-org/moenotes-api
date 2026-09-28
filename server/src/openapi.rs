@@ -81,14 +81,16 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
         let Some(source) = existing.get(*legacy) else {
             continue;
         };
-        for region in [None, Some("tw"), Some("en"), Some("kr")] {
+        for region in [None, Some("tw"), Some("en"), Some("kr"), Some("jp")] {
             let path = region
                 .map(|r| format!("/v1/{r}{}", route.path.trim_start_matches("/v1")))
                 .unwrap_or_else(|| route.path.to_owned());
             let mut operation = source.clone();
             let get = &mut operation["get"];
             get["operationId"] = json!(format!("path:{}", path));
-            get["description"] = json!(if route.method == "profile" {
+            get["description"] = json!(if route.method == "profile" && region == Some("jp") {
+                "JP requires an explicit JP route and a positive int64 profile ID; no international prefix inference."
+            } else if route.method == "profile" {
                 "11-digit profile ID: 2 = tw, 3 = en, 4 = kr. Selects the matching configured region; explicit region must agree. Unknown prefixes return 400 and missing regions return 503. No cross-region fallback."
             } else {
                 "Readable GET alias. Optional filters remain query parameters. Lists in a path use commas, preserving order and duplicates. Path-bound fields cannot also be query parameters. An explicit region selects its independent session; otherwise the default region is used."
@@ -110,11 +112,15 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
                         "URL-encoded path segment."
                     });
                     if route.method == "profile" {
-                        parameter["schema"] = json!({"type":"string","pattern":"^[234][0-9]{10}$"});
+                        parameter["schema"] = if region == Some("jp") {
+                            json!({"type":"string","pattern":"^[0-9]+$"})
+                        } else {
+                            json!({"type":"string","pattern":"^[234][0-9]{10}$"})
+                        };
                     }
                 }
             }
-            get["responses"]["200"]["headers"]["X-Moenotes-Region"] = json!({"description":"Selected region for automatic-profile or explicit-region requests.","schema":{"type":"string","enum":["tw","en","kr"]}});
+            get["responses"]["200"]["headers"]["X-Moenotes-Region"] = json!({"description":"Selected region for automatic-profile or explicit-region requests.","schema":{"type":"string","enum":["tw","en","kr","jp"]}});
             paths.insert(path, operation);
         }
     }
@@ -122,7 +128,7 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
         let Some(source) = existing.get(path) else {
             continue;
         };
-        for region in ["tw", "en", "kr"] {
+        for region in ["tw", "en", "kr", "jp"] {
             let path = format!("/v1/{region}{}", path.trim_start_matches("/v1"));
             let mut operation = source.clone();
             operation["get"]["operationId"] = json!(format!("region:{}", path));

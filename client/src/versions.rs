@@ -11,6 +11,7 @@ use std::sync::{
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct DataVersions {
     pub master_version: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub resource_version: String,
 }
 
@@ -39,27 +40,41 @@ impl Client {
     ) -> Result<bool, ClientError> {
         let session = self.session_for(generation)?;
         let query = Query::Version(Default::default());
-        let method = *query.method();
+        let method = query.method_for_region(&session.config.region)?;
         let request = DynamicMessage::new(
-            moenotes_proto::pool()
+            moenotes_proto::pool_for_region(&session.config.region)
                 .get_message_by_name(method.input)
                 .unwrap(),
         );
         let metadata = session
             .config
             .metadata(None, &Generation::new_v4().to_string(), true)?;
-        self.run_operation(
+        self.run_operation_response(
             session.clone(),
             method,
             request,
             metadata,
             cancel.clone(),
-            |message| {
+            |result| {
+                let message = result.message;
                 let response = crate::generated::app::masterdata::VersionResponse::decode(
                     message.encode_to_vec().as_slice(),
                 )
                 .map_err(|_| ClientError::new(ErrorKind::Protocol))?;
-                if !valid(&response.version) || !valid(&response.resource_version) {
+                let resource = if session.config.region == "jp" {
+                    crate::jp::asset_version(
+                        result.asset_version.as_deref(),
+                        &session.config.client_version,
+                    )
+                } else {
+                    Some(response.resource_version.clone())
+                };
+                if !(if session.config.region == "jp" {
+                    crate::jp::valid_master(&response.version)
+                } else {
+                    valid(&response.version)
+                }) || (session.config.region != "jp" && !valid(&response.resource_version))
+                {
                     return Err(ClientError::new(ErrorKind::Protocol));
                 }
                 let mut current = self.session.write().unwrap();
@@ -70,13 +85,13 @@ impl Client {
                     return Err(ClientError::new(ErrorKind::Cancelled));
                 }
                 if current.config.master_version.as_ref() == Some(&response.version)
-                    && current.config.resource_version.as_ref() == Some(&response.resource_version)
+                    && current.config.resource_version == resource
                 {
                     return Ok(false);
                 }
                 let mut config = current.config.clone();
                 config.master_version = Some(response.version);
-                config.resource_version = Some(response.resource_version);
+                config.resource_version = resource;
                 let mut blocked = *current.blocked.read().unwrap();
                 if blocked == Some(ErrorKind::Version)
                     && current.master_mismatch.load(Ordering::SeqCst)
@@ -91,6 +106,9 @@ impl Client {
                     cancel: CancellationToken::new(),
                     blocked: RwLock::new(blocked),
                     master_mismatch: AtomicBool::new(false),
+                    jp_override_pending: AtomicBool::new(
+                        current.jp_override_pending.load(Ordering::SeqCst),
+                    ),
                 });
                 current.cancel.cancel();
                 *current = new;

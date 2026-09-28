@@ -78,6 +78,21 @@ fn invalid() -> ClientError {
 }
 
 impl Query {
+    pub fn method_for_region(&self, region: &str) -> Result<Method, ClientError> {
+        let mut method = *self.method();
+        if region == "jp" {
+            if matches!(self, Self::ServerList(_)) {
+                return Err(invalid());
+            }
+            if matches!(self, Self::Profiles(_)) {
+                method.path = "/app.player.PlayerService/GetPlayerList";
+                method.input = "app.player.GetPlayerListRequest";
+                method.output = "app.player.GetPlayerListResponse";
+            }
+        }
+        Ok(method)
+    }
+
     pub fn validate(&self) -> Result<(), ClientError> {
         let valid = match self {
             Self::Announcement(r) => r.id > 0,

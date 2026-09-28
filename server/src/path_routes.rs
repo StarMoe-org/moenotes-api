@@ -119,7 +119,7 @@ pub(crate) const ROUTES: &[Route] = &[
 ];
 
 pub(crate) fn method_for_path(path: &str) -> Option<&'static str> {
-    let unscoped = ["/v1/tw", "/v1/en", "/v1/kr"]
+    let unscoped = ["/v1/tw", "/v1/en", "/v1/kr", "/v1/jp"]
         .iter()
         .find_map(|prefix| path.strip_prefix(prefix));
     let path = unscoped
@@ -150,7 +150,13 @@ fn valid_path(path: &str) -> bool {
 
 pub(crate) fn install(mut router: Router<ApiState>) -> Router<ApiState> {
     for route in ROUTES {
-        for region in [None, Some(Region::Tw), Some(Region::En), Some(Region::Kr)] {
+        for region in [
+            None,
+            Some(Region::Tw),
+            Some(Region::En),
+            Some(Region::Kr),
+            Some(Region::Jp),
+        ] {
             let path = region
                 .map(|r| format!("/v1/{}{}", r.as_str(), route.path.trim_start_matches("/v1")))
                 .unwrap_or_else(|| route.path.to_owned());
@@ -161,9 +167,13 @@ pub(crate) fn install(mut router: Router<ApiState>) -> Router<ApiState> {
                 let raw = match path_query(route, &params, raw.as_deref()) { Ok(raw)=>raw, Err(error)=>return HttpError(error).into_response() };
                 let selected = if route.method == "profile" {
                     let Some(id)=params.get("profileId") else { return invalid().into_response(); };
+                    if region == Some(Region::Jp) {
+                        if id.parse::<i64>().ok().is_none_or(|n| n <= 0) { return invalid().into_response(); }
+                        Some(Region::Jp)
+                    } else {
                     let inferred = match Region::from_profile_id(id) { Ok((r,_))=>r, Err(kind)=>return error(StatusCode::BAD_REQUEST,kind) };
                     if region.is_some_and(|r|r!=inferred) { return error(StatusCode::BAD_REQUEST,"profile_region_mismatch"); }
-                    Some(inferred)
+                    Some(inferred) }
                 } else { region };
                 execute(state,route.method,Some(&raw),selected).await
             }).head(method_not_allowed));
@@ -172,7 +182,7 @@ pub(crate) fn install(mut router: Router<ApiState>) -> Router<ApiState> {
     // Explicit regions also support the established query-form endpoints and
     // routes that already need no parameters (announcements, circle discovery).
     for &(path, method) in crate::ROUTES {
-        for region in [Region::Tw, Region::En, Region::Kr] {
+        for region in [Region::Tw, Region::En, Region::Kr, Region::Jp] {
             let path = format!("/v1/{}{}", region.as_str(), path.trim_start_matches("/v1"));
             router = router.route(&path,get(move |State(state):State<ApiState>,RawQuery(raw):RawQuery,body:Result<Bytes,axum::extract::rejection::BytesRejection>| async move {
                 if !matches!(body, Ok(ref bytes) if bytes.is_empty()) { return invalid().into_response(); }

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use bytes::Buf;
-use moenotes_proto::pool;
+
 use prost::Message;
 use prost_reflect::{DynamicMessage, MessageDescriptor};
 use std::time::Duration;
@@ -16,6 +16,20 @@ use crate::{ClientError, ErrorKind, Method, SessionConfig};
 /// Injectable for offline tests; production construction uses validated HTTPS origins.
 #[async_trait]
 pub trait Transport: Send + Sync {
+    async fn call_with_metadata(
+        &self,
+        method: Method,
+        request: DynamicMessage,
+        metadata: MetadataMap,
+        timeout: Duration,
+    ) -> Result<TransportResponse, ClientError> {
+        self.call(method, request, metadata, timeout)
+            .await
+            .map(|message| TransportResponse {
+                message,
+                asset_version: None,
+            })
+    }
     async fn call(
         &self,
         method: Method,
@@ -27,6 +41,13 @@ pub trait Transport: Send + Sync {
 
 pub struct GrpcTransport {
     channel: Channel,
+    region: String,
+}
+
+pub struct TransportResponse {
+    pub message: DynamicMessage,
+    /// Only public version metadata is retained. CDN passwords never leave transport.
+    pub asset_version: Option<String>,
 }
 
 impl GrpcTransport {
@@ -39,6 +60,7 @@ impl GrpcTransport {
             .connect_timeout(Duration::from_secs(10));
         Ok(Self {
             channel: endpoint.connect_lazy(),
+            region: config.region.clone(),
         })
     }
 }
@@ -52,6 +74,18 @@ impl Transport for GrpcTransport {
         metadata: MetadataMap,
         timeout: Duration,
     ) -> Result<DynamicMessage, ClientError> {
+        self.call_with_metadata(method, message, metadata, timeout)
+            .await
+            .map(|r| r.message)
+    }
+
+    async fn call_with_metadata(
+        &self,
+        method: Method,
+        message: DynamicMessage,
+        metadata: MetadataMap,
+        timeout: Duration,
+    ) -> Result<TransportResponse, ClientError> {
         let mut grpc = tonic::client::Grpc::new(self.channel.clone())
             .max_decoding_message_size(8 * 1024 * 1024)
             .max_encoding_message_size(1024 * 1024);
@@ -61,7 +95,11 @@ impl Transport for GrpcTransport {
         let mut request = Request::new(message);
         *request.metadata_mut() = metadata;
         request.set_timeout(timeout);
-        let codec = DynamicCodec(pool().get_message_by_name(method.output).unwrap());
+        let codec = DynamicCodec(
+            moenotes_proto::pool_for_region(&self.region)
+                .get_message_by_name(method.output)
+                .ok_or_else(|| ClientError::new(ErrorKind::Protocol))?,
+        );
         // Unary wire format, with explicit stream consumption to retain initial and
         // trailing metadata separately even when the final gRPC status is an error.
         let response = grpc
@@ -94,7 +132,18 @@ impl Transport for GrpcTransport {
         if let Some(error) = ClientError::from_metadata(Code::Ok, &initial, &trailing) {
             return Err(error);
         }
-        message.ok_or_else(|| ClientError::new(ErrorKind::Protocol))
+        let asset_version = trailing
+            .get_all("x-asset-version")
+            .iter()
+            .next_back()
+            .or_else(|| initial.get_all("x-asset-version").iter().next_back())
+            .and_then(|v| v.to_str().ok())
+            .filter(|v| v.len() <= 64 * 1024)
+            .map(str::to_owned);
+        Ok(TransportResponse {
+            message: message.ok_or_else(|| ClientError::new(ErrorKind::Protocol))?,
+            asset_version,
+        })
     }
 }
 
@@ -140,5 +189,8 @@ impl Decoder for DynamicDecoder {
 
 #[cfg(test)]
 pub(crate) fn mock_channel(channel: Channel) -> GrpcTransport {
-    GrpcTransport { channel }
+    GrpcTransport {
+        channel,
+        region: String::new(),
+    }
 }

@@ -4,6 +4,7 @@ pub mod cache;
 pub mod config;
 pub mod config_file;
 mod diagnostics;
+pub mod jp_operator;
 pub mod managed;
 mod openapi;
 pub mod operator;

@@ -19,7 +19,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const MAX_FILES: usize = 128;
 fn directory() -> PathBuf {
-    PathBuf::from("/accounts")
+    PathBuf::from("/accounts/international")
 }
 fn yes() -> bool {
     true
@@ -70,7 +70,7 @@ impl std::fmt::Debug for Account {
     }
 }
 
-fn file_list(config: &AccountsConfig) -> Result<Vec<PathBuf>, ClientError> {
+pub(crate) fn file_list(config: &AccountsConfig) -> Result<Vec<PathBuf>, ClientError> {
     config.validate()?;
     match fs::symlink_metadata(&config.directory) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -103,6 +103,71 @@ fn file_list(config: &AccountsConfig) -> Result<Vec<PathBuf>, ClientError> {
     }
     files.sort();
     Ok(files)
+}
+
+/// JP input files contain only origin-bound game credentials. No SDK password,
+/// automatic registration, device override or credential renewal is performed.
+pub struct JpAccountDirectoryClient {
+    client: Arc<Client>,
+    accounts: AccountsConfig,
+    session: SessionConfig,
+}
+impl JpAccountDirectoryClient {
+    pub fn new(
+        client: Arc<Client>,
+        accounts: AccountsConfig,
+        session: SessionConfig,
+    ) -> Result<Self, ClientError> {
+        accounts.validate()?;
+        if session.region != "jp" {
+            return Err(invalid());
+        }
+        Ok(Self {
+            client,
+            accounts,
+            session,
+        })
+    }
+    pub fn provider(&self) -> Result<moenotes_client::StaticCredentials, ClientError> {
+        let files = file_list(&self.accounts)?;
+        if files.is_empty() {
+            return Err(ClientError::new(ErrorKind::AuthenticationRequired));
+        }
+        if files.len() != 1 {
+            return Err(invalid());
+        }
+        // operator::private_read rejects links/non-private files before the
+        // credential parser enforces the embedded region/origin binding.
+        let raw = operator::private_read(&files[0])?;
+        moenotes_client::StaticCredentials::from_json(&self.session, &raw)
+    }
+}
+#[async_trait]
+impl Recovery for JpAccountDirectoryClient {
+    fn input_revision(&self) -> Option<[u8; 32]> {
+        Some(match file_list(&self.accounts) {
+            Ok(files) if files.len() == 1 => match operator::private_read(&files[0]) {
+                Ok(raw) => hash_parts(&[&raw]),
+                Err(_) => hash_parts(&[b"invalid"]),
+            },
+            _ => hash_parts(&[b"missing_or_ambiguous"]),
+        })
+    }
+    async fn recover(
+        &self,
+        generation: Generation,
+        cancel: CancellationToken,
+    ) -> Result<(), ClientError> {
+        let provider = self.provider()?;
+        if cancel.is_cancelled() {
+            return Err(ClientError::new(ErrorKind::Cancelled));
+        }
+        self.client.import_credentials(generation, &provider)?;
+        eprintln!(
+            "{{\"event\":\"account_load\",\"region\":\"jp\",\"status\":\"credentials_imported\"}}"
+        );
+        Ok(())
+    }
 }
 fn select(config: &AccountsConfig) -> Result<Account, ClientError> {
     let files = file_list(config)?;
@@ -458,7 +523,7 @@ mod tests {
     #[test]
     fn defaults_and_strict_selection() {
         let default: AccountsConfig = toml::from_str("").unwrap();
-        assert_eq!(default.directory, Path::new("/accounts"));
+        assert_eq!(default.directory, Path::new("/accounts/international"));
         assert!(default.allow_create && !default.sdk_ready);
         let (_dir, mut accounts, _, _) = setup();
         assert_eq!(

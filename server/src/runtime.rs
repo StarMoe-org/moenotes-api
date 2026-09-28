@@ -1,6 +1,6 @@
 //! One independently configured upstream and its authentication lifecycle.
 use crate::{
-    accounts::AccountDirectoryClient,
+    accounts::{AccountDirectoryClient, JpAccountDirectoryClient},
     config::Config,
     managed::{GameRecovery, ManagedClient, Recovery},
 };
@@ -14,6 +14,7 @@ pub struct Runtime {
     pub client: Arc<Client>,
     pub managed: Arc<ManagedClient>,
     accounts: Option<Arc<AccountDirectoryClient>>,
+    jp_accounts: bool,
 }
 impl Runtime {
     /// Validate local state without reading passwords or making upstream requests.
@@ -47,6 +48,7 @@ impl Runtime {
         let accounts = config
             .accounts
             .clone()
+            .filter(|_| config.session.region != "jp")
             .map(|accounts| {
                 AccountDirectoryClient::new(
                     client.clone(),
@@ -79,15 +81,24 @@ impl Runtime {
         if let Some(accounts) = &accounts {
             managed = managed.with_initial_loader(accounts.clone());
         }
+        let jp_accounts = config.session.region == "jp" && config.accounts.is_some();
+        if jp_accounts {
+            managed = managed.with_initial_loader(Arc::new(JpAccountDirectoryClient::new(
+                client.clone(),
+                config.accounts.clone().unwrap(),
+                config.session.clone(),
+            )?));
+        }
         Ok(Self {
             config,
             client,
             managed: Arc::new(managed),
             accounts,
+            jp_accounts,
         })
     }
     pub fn start(&self) -> Option<tokio::task::JoinHandle<()>> {
-        if self.accounts.is_some() {
+        if self.accounts.is_some() || self.jp_accounts {
             eprintln!(
                 "{}",
                 serde_json::json!({"event":"account_source","status":"deferred","trigger":"first_authenticated_query"})
@@ -100,6 +111,11 @@ impl Runtime {
     }
     pub fn reload(&self) -> Result<(), ClientError> {
         self.managed.reload(|| {
+            if self.jp_accounts {
+                return self
+                    .client
+                    .replace_session(self.client.session_config(), None);
+            }
             if let Some(accounts) = &self.accounts {
                 self.client
                     .replace_session(self.client.session_config(), None)?;

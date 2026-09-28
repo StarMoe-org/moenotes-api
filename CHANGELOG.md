@@ -2,6 +2,16 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## 0.1.0-alpha.7 - 2026-09-29
+
+- Add JP credential import under `/accounts/jp`, and organize new international
+  account-password defaults under `/accounts/international` (explicit legacy paths
+  stay compatible). JP never invokes SDK login or automatic account recovery.
+- Add JP protocol isolation, version response-header handling, request-header
+  policy, profiles service mapping and explicit `/v1/jp/` routes.
+- Add explicit `jp-register`, local registration-response import, `jp-check` and
+  `init-accounts` operator commands. No public account-creation endpoint.
+
 ## 0.1.0-alpha.6 - 2026-09-28
 
 - Add readable path aliases for the query API, comma-separated path lists and

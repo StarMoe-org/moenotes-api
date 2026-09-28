@@ -3,7 +3,7 @@
 # Container default: /var/lib/moenotes/config.toml (mount a persistent volume).
 # Blank settings keep `serve` health-only. Fill with authorized values.
 # Protect populated config with mode 0600 and container UID 65532 ownership.
-# Account passwords stay ONLY in /accounts/*.json, never in this file.
+# Account passwords stay ONLY in /accounts/international/*.json, never in this file.
 listen = "0.0.0.0:8080"
 api_key = "" # Random ASCII HTTP bearer key, at least 32 chars, no whitespace.
 response_mode = "public" # raw is for trusted operators only.
@@ -30,7 +30,7 @@ enabled = true
 interval_seconds = 60
 
 [accounts]
-directory = "/accounts"
+directory = "/accounts/international"
 # selected = "worker.json" # Required when multiple account JSON files exist.
 allow_create = true # Only when pre-login reports no role in this region.
 sdk_ready = false # Set true after required official SDK consent/checks.
@@ -92,3 +92,14 @@ isRoot = ""
 # Region-specific login/accounts/recovery/version_sync use the same sub-sections.
 # Each login.state_dir must be private and different from the other regions.
 # See docs/configuration.md#multiple-regions and docs/path-routes.md.
+
+# JP uses credential import only; no [regions.jp.login] or recovery.
+# [regions.jp.accounts]
+# directory = "/accounts/jp"
+# selected = "worker.json"
+# [regions.jp.session]
+# region = "jp"
+# origin = "https://api.bang-dream-on.jp"
+# allowed_origins = ["https://api.bang-dream-on.jp"]
+# platform = "android"
+# client_version = "1.0.3"

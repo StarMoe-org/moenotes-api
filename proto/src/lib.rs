@@ -10,6 +10,18 @@ pub mod generated {
 }
 
 pub const DESCRIPTORS: &[u8] = include_bytes!("../descriptors.pb");
+pub const JP_DESCRIPTORS: &[u8] = include_bytes!("../jp-descriptors.pb");
+
+pub fn pool_for_region(region: &str) -> &'static DescriptorPool {
+    if region == "jp" {
+        static JP: OnceLock<DescriptorPool> = OnceLock::new();
+        JP.get_or_init(|| {
+            DescriptorPool::decode(JP_DESCRIPTORS).expect("validated JP protocol snapshot")
+        })
+    } else {
+        pool()
+    }
+}
 
 pub fn pool() -> &'static DescriptorPool {
     static POOL: OnceLock<DescriptorPool> = OnceLock::new();

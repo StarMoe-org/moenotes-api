@@ -202,8 +202,12 @@ impl Config {
             || !(30..=86400).contains(&config.version_sync.interval_seconds)
             || config.recovery.enabled && config.login.is_none()
             || config.login.is_some() && config.credentials_file.is_some()
-            || config.accounts.is_some() && config.login.is_none()
-            || config.accounts.is_some() && config.login.as_ref().is_some_and(|l| !l.has_sdk_http())
+            || config.session.region != "jp" && config.accounts.is_some() && config.login.is_none()
+            || config.session.region != "jp"
+                && config.accounts.is_some()
+                && config.login.as_ref().is_some_and(|l| !l.has_sdk_http())
+            || config.session.region == "jp" && (config.login.is_some() || config.recovery.enabled)
+            || config.accounts.is_some() && config.credentials_file.is_some()
             || config.api_key.is_some() == !config.api_key_file.as_os_str().is_empty()
             || config.enable_experimental_raw
                 && config.response_mode.is_some_and(|m| m != ResponseMode::Raw)
@@ -236,6 +240,11 @@ impl Config {
             }
         }
         if let Some(accounts) = &mut config.accounts {
+            if config.session.region == "jp"
+                && accounts.directory == Path::new("/accounts/international")
+            {
+                accounts.directory = "/accounts/jp".into();
+            }
             accounts.validate()?;
             if accounts.directory.is_relative() {
                 accounts.directory = parent.join(&accounts.directory);

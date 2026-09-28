@@ -85,6 +85,16 @@ pub(crate) fn save_credentials(
 }
 
 impl StaticCredentials {
+    pub fn from_json(config: &SessionConfig, bytes: &[u8]) -> Result<Self, ClientError> {
+        if bytes.len() > 64 * 1024 {
+            return Err(bad_config());
+        }
+        let stored: CredentialFile = serde_json::from_slice(bytes).map_err(|_| bad_config())?;
+        let provider = Self::new(stored.region, stored.origin, stored.credentials);
+        let credentials = provider.credentials(config)?.ok_or_else(bad_config)?;
+        config.metadata(Some(&credentials), "validation", false)?;
+        Ok(provider)
+    }
     pub fn new(region: String, origin: String, credentials: Credentials) -> Self {
         Self {
             region,
@@ -95,6 +105,12 @@ impl StaticCredentials {
 
     /// Explicit read-only operator input. On Unix, group/other permissions are rejected.
     pub fn from_file(path: &Path) -> Result<Self, ClientError> {
+        if !std::fs::symlink_metadata(path)
+            .map_err(|_| bad_config())?
+            .is_file()
+        {
+            return Err(bad_config());
+        }
         let file = std::fs::File::open(path).map_err(|_| bad_config())?;
         let meta = file.metadata().map_err(|_| bad_config())?;
         if !meta.is_file() || meta.len() > 64 * 1024 {
@@ -139,7 +155,16 @@ impl SessionConfig {
                 .allowed_origins
                 .iter()
                 .any(|v| origin(v).ok().as_ref() == Some(&target))
-            || self.master_version.is_some() != self.resource_version.is_some()
+            || (self.region != "jp"
+                && self.master_version.is_some() != self.resource_version.is_some())
+            || (self.region == "jp"
+                && (self.platform != "android"
+                    || self.resource_version.is_some() && self.master_version.is_none()))
+            || self.region == "jp"
+                && self
+                    .master_version
+                    .as_ref()
+                    .is_some_and(|v| !crate::jp::valid_master(v))
         {
             return Err(bad_config());
         }
@@ -167,11 +192,17 @@ impl SessionConfig {
                 return Err(bad_config());
             }
             insert(&mut result, "x-player-id", &auth.player_id, true)?;
+            if self.region == "jp" && auth.bid.is_some() {
+                return Err(bad_config());
+            }
             insert(&mut result, "x-player-credential", &auth.credential, true)?;
             for (key, value) in [
                 ("x-device-id", &auth.device_id),
                 ("x-player-bid", &auth.bid),
             ] {
+                if self.region == "jp" && key == "x-player-bid" {
+                    continue;
+                }
                 if let Some(value) = value {
                     insert(&mut result, key, value, true)?;
                 }
@@ -180,6 +211,9 @@ impl SessionConfig {
                 ("x-master-version", &self.master_version),
                 ("x-resource-version", &self.resource_version),
             ] {
+                if self.region == "jp" && key == "x-resource-version" {
+                    continue;
+                }
                 if let Some(value) = value {
                     insert(&mut result, key, value, false)?;
                 }
