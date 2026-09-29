@@ -151,3 +151,18 @@ for EN/KR with explicitly scoped snapshots, without another password login.
 - Input account files were unchanged; temporary processes exited successfully.
   The production deployment was not changed. This is a bounded sequential live
   test, not a concurrent throughput or long-term credential-lifetime guarantee.
+
+## JP profile-card image proxy (2026-09-30)
+
+A local build fetched an authorized public JP profile through a saved JP credential
+import, then proxied two profile-card pages through anonymous Version/CDN auth.
+Both responses were PNG, 1224×688 (37,088 and 94,595 bytes), byte-identical to the
+independent authenticated CDN downloads. Repeated API requests were cache hits;
+missing page returned 404 and missing HTTP key returned 401. No SDK login,
+registration, device transfer or game write occurred.
+
+The companion ranking service was tested end to end against that local API:
+both pages matched, ETag revalidation returned 304, HEAD preserved image length,
+and a nonexistent third page returned 404/no-store. Temporary listeners were
+stopped afterward. This validates the local implementation; it does not claim
+that the new image route has been released or deployed to production.

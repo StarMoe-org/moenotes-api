@@ -3,6 +3,10 @@
 For event cutoff fields, optional/default values, rank matching and a downstream
 request example, see the [ranking integration guide](rankings.md).
 
+JP custom profile-card PNGs are available through the authenticated
+[`/v1/jp/profile/{profileId}/card/{page}` proxy](profile-card-images.md).
+Pages are 1-based; existing profile JSON is unchanged.
+
 The current source uses short GET routes under `/v1`. This replaces the original
 `POST /experimental/v1/...` contract; old routes are not retained or redirected.
 Published `0.1.0-alpha.1` images use the old contract. The alpha.2 baseline and

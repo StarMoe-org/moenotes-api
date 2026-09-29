@@ -44,7 +44,14 @@ claimed. Use only accounts and upstream services you are authorized to access.
   share the gateway bearer key and response policy; callers holding that key can
   reach any configured region. Use separate gateway instances for separate callers.
 
+The JP profile-card proxy obtains a separate CDN credential from anonymous Version
+metadata. It remains in process memory and is not included in query JSON, logs or
+client response headers. Image URLs are profile-bound and restricted to the official
+CDN; redirects are rejected. Image bytes are bounded and PNG-framed but not fully
+decoded or sanitized. See [image proxy limits](docs/profile-card-images.md).
+
 ## Dependency Advisory Review
+
 
 Reviewed 2026-09-23 against RustSec database revision
 `6477ec04375b913e13f38d966dc49eba9d178cb8` and the checked-in `Cargo.lock`.

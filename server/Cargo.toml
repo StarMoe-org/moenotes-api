@@ -27,8 +27,11 @@ async-trait.workspace = true
 uuid.workspace = true
 tempfile = "3"
 rpassword = "7"
+base64 = "0.22"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+tonic.workspace = true
 
 [dev-dependencies]
-tonic.workspace = true
+axum = { workspace = true, features = ["http2"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

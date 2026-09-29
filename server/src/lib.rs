@@ -10,6 +10,7 @@ mod openapi;
 pub mod operator;
 mod path_routes;
 pub mod pool;
+mod profile_images;
 pub mod projection;
 mod query_params;
 pub mod regions;
@@ -164,6 +165,7 @@ pub fn router_with_regions(
         .route("/v1/status",get(|State(state):State<ApiState>|async move {Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"responseMode":state.mode,"session":state.cache.single_status(),"pool":state.cache.status(),"regions":state.profiles.status(),"diagnostics":state.diagnostics.snapshot()}))}));
     if mode != projection::ResponseMode::Disabled {
         protected = path_routes::install(protected);
+        protected = profile_images::install(protected);
         for &(path, name) in ROUTES {
             protected = protected.route(
                 path,
@@ -224,6 +226,7 @@ async fn diagnose(State(state): State<ApiState>, request: Request, next: Next) -
         .find(|(path, _)| *path == request.uri().path())
         .map(|(_, name)| *name)
         .or_else(|| matched.and_then(path_routes::method_for_path))
+        .or_else(|| (matched == Some(profile_images::ROUTE)).then_some("profile-card-image"))
         .unwrap_or("support_or_unknown");
     let mut response = next.run(request).await;
     let status = response.status();

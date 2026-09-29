@@ -4,6 +4,13 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+- Add authenticated `GET /v1/jp/profile/{profileId}/card/{page}` for 1-based JP
+  profile-card PNG pages. Resolve URLs through the JP pool; preserve profile JSON.
+  Keep anonymous Version/CDN authorization in memory, refresh once on rejection,
+  reject off-origin URLs/redirects and bound image size, time and cache memory.
+- Add `RegionClients::enable_profile_images` for library embedders. The CLI
+  enables it for the official JP origin using the current effective client version.
+
 ## 0.1.0-alpha.9 - 2026-09-29
 
 - Add opt-in `[version_sync] follow_client_updates`. When the anonymous Version

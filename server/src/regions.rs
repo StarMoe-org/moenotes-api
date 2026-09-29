@@ -57,11 +57,30 @@ pub struct RegionBackend {
 pub struct RegionClients {
     backends: BTreeMap<Region, Backend>,
     default_region: Option<Region>,
+    images: Option<Arc<crate::profile_images::ProfileImages>>,
 }
 struct Backend {
     pool: Arc<SessionPool>,
 }
 impl RegionClients {
+    /// Enable the JP card proxy using this live client's effective client version.
+    /// Only the official JP API/CDN origins are supported. No network request is
+    /// made here; CDN authorization is discovered lazily without player credentials.
+    pub fn enable_profile_images(
+        &mut self,
+        client: Arc<moenotes_client::Client>,
+        stop: CancellationToken,
+    ) -> Result<(), ClientError> {
+        self.images = Some(crate::profile_images::ProfileImages::new(client, stop)?);
+        Ok(())
+    }
+    pub(crate) fn profile_images(&self) -> Option<&Arc<crate::profile_images::ProfileImages>> {
+        self.images.as_ref()
+    }
+    #[cfg(test)]
+    pub(crate) fn set_profile_images(&mut self, images: Arc<crate::profile_images::ProfileImages>) {
+        self.images = Some(images);
+    }
     pub fn new(
         default_region: Option<Region>,
         backends: Vec<RegionBackend>,

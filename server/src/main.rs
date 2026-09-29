@@ -220,7 +220,13 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         pools.push((*region, make_pool(&members)?));
         runtimes.extend(members);
     }
-    let regions = moenotes_server::regions::RegionClients::with_pools(default_region, pools)?;
+    let mut regions = moenotes_server::regions::RegionClients::with_pools(default_region, pools)?;
+    if let Some(runtime) = runtimes.iter().find(|r| {
+        r.config.session.region == "jp"
+            && r.config.session.origin.trim_end_matches('/') == "https://api.bang-dream-on.jp"
+    }) {
+        regions.enable_profile_images(runtime.client.clone(), stop.clone())?;
+    }
     if command == "auth-status" {
         let region_status: std::collections::BTreeMap<_, _> = default_region.into_iter()
             .chain(config.regions.keys().copied())

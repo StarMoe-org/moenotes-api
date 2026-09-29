@@ -138,6 +138,22 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
             paths.insert(path, operation);
         }
     }
+    paths.insert(crate::profile_images::ROUTE.into(), json!({"get": {
+        "operationId":"jp-profile-card-image", "tags":["read queries"],
+        "description":"JP custom profile-card page as PNG. Page is 1-based in thumbnailUrl order. No request body or query parameters. Server-side CDN authentication; existing profile JSON is unchanged.",
+        "security":[{"apiKey":[]}],
+        "parameters":[
+            {"name":"profileId","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9]+$"},"description":"Positive int64 JP profile ID."},
+            {"name":"page","in":"path","required":true,"schema":{"type":"integer","minimum":1},"description":"1-based page index."}
+        ],
+        "responses":{
+            "200":{"description":"PNG, at most 8 MiB. Cache-Control: no-store; internal image cache keyed by the full upstream URL.","content":{"image/png":{"schema":{"type":"string","format":"binary"}}}},
+            "400":{"description":"Invalid ID, page, query or body"},"401":{"description":"Missing or invalid API key"},
+            "404":{"description":"Profile/card/page missing or route disabled"},"405":{"description":"GET only"},
+            "429":{"description":"Local admission/download limit"},"502":{"description":"Invalid upstream image or CDN failure"},
+            "503":{"description":"JP/proxy unconfigured or upstream session unavailable"},"504":{"description":"Request deadline exceeded"}
+        }
+    }}));
     json!({"openapi":"3.1.0","info":{"title":"moenotes-api","version":env!("CARGO_PKG_VERSION"),"description":"Experimental GET query gateway with limited live validation. Not an official or stable API."},
         "paths":paths,"components":{"securitySchemes":{"apiKey":{"type":"http","scheme":"bearer"}},"schemas":schemas}})
 }
