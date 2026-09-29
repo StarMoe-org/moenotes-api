@@ -4,6 +4,8 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+## 0.1.0-alpha.10 - 2026-09-30
+
 - Add authenticated `GET /v1/jp/profile/{profileId}/card/{page}` for 1-based JP
   profile-card PNG pages. Resolve URLs through the JP pool; preserve profile JSON.
   Keep anonymous Version/CDN authorization in memory, refresh once on rejection,

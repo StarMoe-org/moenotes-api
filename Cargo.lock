@@ -771,7 +771,7 @@ dependencies = [
 
 [[package]]
 name = "moenotes-client"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "async-trait",
  "axum",
@@ -804,7 +804,7 @@ dependencies = [
 
 [[package]]
 name = "moenotes-proto"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "prost",
  "prost-build",
@@ -815,7 +815,7 @@ dependencies = [
 
 [[package]]
 name = "moenotes-server"
-version = "0.1.0-alpha.9"
+version = "0.1.0-alpha.10"
 dependencies = [
  "async-trait",
  "axum",
