@@ -5,6 +5,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Patch releases tried per check once the game refuses the client version.
 const CLIENT_CANDIDATES: u32 = 3;
 
+pub(super) fn client_update_required(error: &ClientError) -> bool {
+    let (initial, trailing) = error.business_codes();
+    error.kind == ErrorKind::Version
+        && trailing
+            .last()
+            .or(initial.last())
+            .is_some_and(|code| code == "CLIENT_UPDATE_REQUIRED")
+}
+
 impl ManagedClient {
     /// Start one bounded anonymous poller. Caller must only use this for `serve`.
     pub fn start_version_sync(
@@ -58,16 +67,14 @@ impl ManagedClient {
         // patch releases in order; one that is refused as well moves on, anything else
         // (e.g. maintenance while the release rolls out) waits for the next check.
         let mut followed = None;
-        if follow_client_updates
-            && matches!(&result, Err(error) if error.kind == ErrorKind::Version)
-        {
+        if follow_client_updates && matches!(&result, Err(error) if client_update_required(error)) {
             let previous = client.session_config().client_version;
             for candidate in moenotes_client::patch_successors(&previous, CLIENT_CANDIDATES) {
                 match client
                     .adopt_client_version(generation, &candidate, self.stop.child_token())
                     .await
                 {
-                    Err(error) if error.kind == ErrorKind::Version => continue,
+                    Err(error) if client_update_required(&error) => continue,
                     outcome => {
                         if outcome.is_ok() {
                             followed = Some((previous.clone(), candidate));
@@ -81,17 +88,33 @@ impl ManagedClient {
         let mut state = self.state.lock().unwrap();
         state.version_updating = false;
         let changed = matches!(result, Ok(true));
+        let rearm = followed.is_some() && state.version_rejected_attempt == Some(generation);
         if changed {
             if state.attempted == Some(generation) {
-                state.attempted = Some(client.generation());
+                state.attempted = if rearm {
+                    None
+                } else {
+                    Some(client.generation())
+                };
             }
             if let Some((old, revision)) = state.initial_attempted
                 && old == generation
             {
-                state.initial_attempted = Some((client.generation(), revision));
+                state.initial_attempted = if rearm {
+                    None
+                } else {
+                    Some((client.generation(), revision))
+                };
+            }
+            if state.version_rejected_attempt == Some(generation) {
+                state.version_rejected_attempt = if rearm {
+                    None
+                } else {
+                    Some(client.generation())
+                };
             }
         }
-        if changed && self.inner.query_error(false).is_none() {
+        if changed && (rearm || self.inner.query_error(false).is_none()) {
             state.phase = Phase::Unverified;
             state.last_error = None;
         }
@@ -296,6 +319,8 @@ mod tests {
         live: Mutex<String>,
         maintenance: Mutex<bool>,
         seen: Mutex<Vec<String>>,
+        rejection: Mutex<ClientError>,
+        protected_calls: Mutex<usize>,
     }
     #[async_trait]
     impl moenotes_client::transport::Transport for Release {
@@ -306,6 +331,10 @@ mod tests {
             metadata: MetadataMap,
             _: Duration,
         ) -> Result<DynamicMessage, ClientError> {
+            if method.name == "whoami" {
+                *self.protected_calls.lock().unwrap() += 1;
+                return Err(ClientError::new(ErrorKind::Authentication));
+            }
             assert_eq!(
                 method.name, "version",
                 "only the anonymous Version call is made"
@@ -323,7 +352,7 @@ mod tests {
                     .collect::<Vec<_>>()
             };
             match order(&presented).cmp(&order(&live)) {
-                std::cmp::Ordering::Less => Err(ClientError::new(ErrorKind::Version)),
+                std::cmp::Ordering::Less => Err(self.rejection.lock().unwrap().clone()),
                 std::cmp::Ordering::Equal if !*self.maintenance.lock().unwrap() => {
                     let desc = moenotes_proto::pool()
                         .get_message_by_name(method.output)
@@ -337,6 +366,16 @@ mod tests {
                 _ => Err(ClientError::new(ErrorKind::Maintenance)),
             }
         }
+    }
+    fn version_error(code: &'static str) -> ClientError {
+        let mut headers = MetadataMap::new();
+        headers.insert("x-sirius-error-code", code.parse().unwrap());
+        ClientError::from_metadata(
+            tonic::Code::FailedPrecondition,
+            &headers,
+            &MetadataMap::new(),
+        )
+        .unwrap()
     }
     fn release(configured: &str, live: &str) -> (Arc<Client>, Arc<ManagedClient>, Arc<Release>) {
         let config = SessionConfig {
@@ -352,6 +391,8 @@ mod tests {
             live: Mutex::new(live.into()),
             maintenance: Mutex::new(false),
             seen: Mutex::new(Vec::new()),
+            rejection: Mutex::new(version_error("CLIENT_UPDATE_REQUIRED")),
+            protected_calls: Mutex::new(0),
         });
         let client = Arc::new(
             Client::with_transport(
@@ -427,5 +468,184 @@ mod tests {
             managed.status().version_sync.unwrap().last_error,
             Some(ErrorKind::Version)
         );
+    }
+
+    #[tokio::test]
+    async fn master_mismatch_does_not_probe_a_client_release() {
+        let (client, managed, mock) = release("1.0.3", "1.0.4");
+        *mock.rejection.lock().unwrap() = version_error("MASTER_VERSION_MISMATCH");
+        managed.sync_versions(&client, true).await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3"]);
+        assert_eq!(client.session_config().client_version, "1.0.3");
+        assert_eq!(managed.status().version_sync.unwrap().client_updates, 0);
+    }
+
+    #[test]
+    fn follows_only_the_effective_explicit_client_update_code() {
+        let mut initial = MetadataMap::new();
+        initial.insert(
+            "x-sirius-error-code",
+            "CLIENT_UPDATE_REQUIRED".parse().unwrap(),
+        );
+        let mut trailing = MetadataMap::new();
+        trailing.append(
+            "x-sirius-error-code",
+            "CLIENT_UPDATE_REQUIRED".parse().unwrap(),
+        );
+        trailing.append(
+            "x-sirius-error-code",
+            "MASTER_VERSION_MISMATCH".parse().unwrap(),
+        );
+        let error = ClientError::from_metadata(tonic::Code::Unknown, &initial, &trailing).unwrap();
+        assert!(!client_update_required(&error));
+        assert!(!client_update_required(&ClientError::new(
+            ErrorKind::Version
+        )));
+        assert!(client_update_required(&version_error(
+            "CLIENT_UPDATE_REQUIRED"
+        )));
+    }
+
+    #[tokio::test]
+    async fn candidate_search_is_bounded_and_never_guesses_minor_releases() {
+        for live in ["1.0.7", "1.1.0", "2.0.0"] {
+            let (client, managed, mock) = release("1.0.3", live);
+            let generation = client.generation();
+            managed.sync_versions(&client, true).await;
+            assert_eq!(
+                *mock.seen.lock().unwrap(),
+                ["1.0.3", "1.0.4", "1.0.5", "1.0.6"]
+            );
+            assert_eq!(client.generation(), generation);
+            assert_eq!(
+                managed.status().version_sync.unwrap().last_error,
+                Some(ErrorKind::Version)
+            );
+        }
+    }
+
+    struct VersionRejectedLoader {
+        client: Arc<Client>,
+        attempts: Mutex<Vec<String>>,
+    }
+    #[async_trait]
+    impl Recovery for VersionRejectedLoader {
+        async fn recover(&self, _: Generation, _: CancellationToken) -> Result<(), ClientError> {
+            let version = self.client.session_config().client_version;
+            self.attempts.lock().unwrap().push(version.clone());
+            if version == "1.0.3" {
+                Err(version_error("CLIENT_UPDATE_REQUIRED"))
+            } else {
+                Err(ClientError::new(ErrorKind::Authentication))
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn adopted_release_rearms_only_version_rejected_initialization() {
+        let (client, _, mock) = release("1.0.3", "1.0.4");
+        let loader = Arc::new(VersionRejectedLoader {
+            client: client.clone(),
+            attempts: Mutex::new(Vec::new()),
+        });
+        let managed = ManagedClient::new(
+            client.clone(),
+            None,
+            Duration::ZERO,
+            CancellationToken::new(),
+        )
+        .with_initial_loader(loader.clone());
+        assert_eq!(
+            managed.query_error(false).unwrap().kind,
+            ErrorKind::AuthenticationRequired
+        );
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3"]);
+        assert_eq!(managed.status().phase, Phase::VersionBlocked);
+
+        managed.sync_versions(&client, true).await;
+        // Adoption itself never logs in; the next protected request triggers work.
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3"]);
+        assert!(!managed.ready());
+        let _ = managed.query_error(false);
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3", "1.0.4"]);
+
+        // An authentication failure remains exhausted across a later release.
+        *mock.live.lock().unwrap() = "1.0.5".into();
+        managed.sync_versions(&client, true).await;
+        let _ = managed.query_error(false);
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3", "1.0.4"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn adopted_release_rearms_version_rejected_recovery_with_cooldown() {
+        let (client, _, mock) = release("1.0.3", "1.0.4");
+        let config = client.session_config();
+        let provider = StaticCredentials::new(
+            config.region,
+            config.origin,
+            Credentials {
+                player_id: "synthetic-player".into(),
+                credential: "synthetic-secret".into(),
+                device_id: None,
+                bid: None,
+            },
+        );
+        client
+            .import_credentials(client.generation(), &provider)
+            .unwrap();
+        let loader = Arc::new(VersionRejectedLoader {
+            client: client.clone(),
+            attempts: Mutex::new(Vec::new()),
+        });
+        let managed = ManagedClient::new(
+            client.clone(),
+            Some(loader.clone()),
+            Duration::from_secs(300),
+            CancellationToken::new(),
+        );
+        assert!(
+            managed
+                .execute(
+                    client.generation(),
+                    Query::Whoami(Default::default()),
+                    CancellationToken::new()
+                )
+                .await
+                .is_err()
+        );
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3"]);
+        managed.sync_versions(&client, true).await;
+        let _ = managed.query_error(false);
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3"]);
+        // The original wall-clock cooldown remains in force after adoption.
+        managed.state.lock().unwrap().last_attempt =
+            Some(Instant::now() - Duration::from_secs(301));
+        let _ = managed.query_error(false);
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3", "1.0.4"]);
+        assert_eq!(
+            *mock.protected_calls.lock().unwrap(),
+            1,
+            "failed query is never replayed"
+        );
+
+        // Even a later query's version error cannot replenish an auth-failed worker.
+        managed.observed(
+            client.generation(),
+            false,
+            &Err(version_error("CLIENT_UPDATE_REQUIRED")),
+        );
+        *mock.live.lock().unwrap() = "1.0.5".into();
+        managed.sync_versions(&client, true).await;
+        managed.state.lock().unwrap().last_attempt =
+            Some(Instant::now() - Duration::from_secs(301));
+        let _ = managed.query_error(false);
+        managed.wait_idle().await;
+        assert_eq!(*loader.attempts.lock().unwrap(), ["1.0.3", "1.0.4"]);
     }
 }

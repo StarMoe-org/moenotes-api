@@ -84,12 +84,17 @@ and their results cannot be labeled or cached with the new generation.
 `session_status()` reports local observations: anonymous, credentials unverified,
 authentication rejected, version blocked or device conflict. Credential presence
 is never treated as proof of validity. Authentication/version/device errors block
-subsequent authenticated upstream work for that generation; explicit session
-replacement is required to clear client-upgrade/device blocks. `refresh_versions`
+subsequent authenticated upstream work for that generation; device blocks require
+explicit session replacement. `refresh_versions`
 performs one anonymous Version call and atomically installs a validated pair,
 retaining credentials and invalidating the old generation. It clears only an
-explicit master mismatch when versions change. Explicit SDK login can
-recover an authentication rejection, but cannot bypass a version/device block.
+explicit master mismatch when versions change. `adopt_client_version` presents an
+explicit candidate with the same anonymous RPC; on success it installs the client
+and data versions together and can clear a client-upgrade block. Authentication
+and device blocks remain. Server-side automatic adoption is opt-in; see
+[following client releases](configuration.md#following-client-releases). Explicit
+SDK login can recover an authentication rejection, but cannot bypass a
+version/device block.
 Anonymous support remains callable.
 Maintenance is returned as an error without an automatic retry or login loop.
 

@@ -15,6 +15,12 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
   `client_updates`; a followed release logs `client_version_update`.
 - Add `moenotes_client::patch_successors` and `Client::adopt_client_version`, and
   `follow_client_updates` to the experimental Rust `VersionSyncConfig` struct.
+- Restrict automatic client probes to explicit `CLIENT_UPDATE_REQUIRED` responses;
+  `MASTER_VERSION_MISMATCH` never starts or advances the candidate search.
+- After adopting a client release, allow the next protected request to retry an
+  initialization/recovery worker explicitly rejected for its old client version.
+  Preserve recovery cooldowns and all other exhausted attempts; never replay the
+  failed query or start a login from the version poller.
 
 ## 0.1.0-alpha.8 - 2026-09-29
 

@@ -1,5 +1,26 @@
 # Validation Record
 
+## Client release following review — 2026-09-29
+
+Review of PR #1 reproduced two regressions before fixing them: a
+`MASTER_VERSION_MISMATCH` incorrectly triggered client-version probing, and a
+worker rejected for its old client version remained exhausted after a successful
+adoption. Automatic probing now requires the effective `CLIENT_UPDATE_REQUIRED`
+business code. Only a worker explicitly rejected with that code is rearmed after
+adoption, on the next protected request, with recovery cooldowns preserved.
+
+144 Rust tests and two doctests passed, together with all-target Clippy with
+warnings denied, formatting, Rust documentation, seven release-script tests,
+actionlint and Docker exported-input validation. Added coverage checks bounded
+patch searches, business-code precedence, initialization/recovery retry budgets,
+no query replay, credential preservation, retained authentication/device blocks,
+unchanged-data generation rotation, stale/cancelled/invalid candidates and JP asset
+selection using the candidate client version.
+
+All new scenarios use synthetic local transports. No live account, SDK/game
+request or deployed rollout was used to validate this review. Acceptance by the
+anonymous Version method alone does not prove compatibility of business methods.
+
 ## JP credential import and registration — 2026-09-29
 
 124 Rust tests and two doctests passed, together with all-target Clippy, formatting,

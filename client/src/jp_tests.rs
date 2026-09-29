@@ -219,6 +219,42 @@ async fn missing_asset_master_only_and_profiles_route() {
     );
 }
 
+#[tokio::test]
+async fn client_adoption_selects_jp_assets_using_the_candidate_version() {
+    let (client, mock) = setup();
+    *mock.asset.lock().unwrap() = Some(serde_json::json!({"live":[
+        {"minClientVersion":"1.0.3","version":"old-assets","Android":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+        {"minClientVersion":"1.0.4","version":"new-assets","Android":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+    ]}).to_string());
+    client
+        .refresh_versions(client.generation(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        client.session_config().resource_version.as_deref(),
+        Some("old-assets")
+    );
+    let generation = client.generation();
+    client
+        .adopt_client_version(generation, "1.0.4", CancellationToken::new())
+        .await
+        .unwrap();
+    assert_ne!(client.generation(), generation);
+    let config = client.session_config();
+    assert_eq!(config.client_version, "1.0.4");
+    assert_eq!(config.resource_version.as_deref(), Some("new-assets"));
+    assert_eq!(
+        config.master_version.as_deref(),
+        Some("1.0.0.100/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+    let calls = mock.calls.lock().unwrap();
+    assert_eq!(
+        calls.last().unwrap().1.get("x-client-version").unwrap(),
+        "1.0.4"
+    );
+    assert!(!calls.last().unwrap().1.contains_key("x-player-credential"));
+}
+
 #[test]
 fn saved_registration_without_device_id_is_imported_without_network() {
     let dir = tempfile::tempdir().unwrap();

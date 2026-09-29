@@ -151,8 +151,9 @@ old cached responses and in-flight work, while preserving the account credential
 Clients may see a transient 503 around a version change and should retry normally.
 
 Only an explicit `MASTER_VERSION_MISMATCH` is cleared by discovery of a changed
-pair. Required client upgrades, rejected tokens and device conflicts still require
-operator action. No failed business request is automatically replayed. Readiness
+pair. Required client upgrades need operator action unless the option below adopts
+a patch release. Rejected tokens and device conflicts are not cleared by version
+discovery. No failed business request is automatically replayed. Readiness
 is re-established by a successful authenticated query, not by Version success.
 See authenticated `/v1/status` → `session.version_sync` for effective versions,
 check/update counts, last check time and safe error category. Disable this section
@@ -166,13 +167,16 @@ follow_client_updates = true
 ```
 
 After a client release the game refuses the configured `client_version` (the
-Version call fails with `version`), and every query of that region fails until the
-configuration is updated. With `follow_client_updates = true` the poller then tries
+Version call returns `CLIENT_UPDATE_REQUIRED`, categorized as `version`), and
+every query of that region fails until the configuration is updated. With
+`follow_client_updates = true` the poller then tries
 the next three patch releases of the configured `MAJOR.MINOR.PATCH` version in
 order (`1.0.3` → `1.0.4`, `1.0.5`, `1.0.6`), each with the same anonymous Version
 call: no account, SDK token or login is involved.
 
-- A candidate the game also refuses moves on to the next one.
+- A candidate also rejected with `CLIENT_UPDATE_REQUIRED` moves on to the next one.
+  `MASTER_VERSION_MISMATCH` shares the `version` error category but never starts or
+  advances this search.
 - The first candidate it accepts is installed together with the versions that call
   returned, and the version block is cleared. Queries continue under the new
   version; old cached responses are invalidated as for any version change.
@@ -188,10 +192,18 @@ Update `client_version` in the file to make it permanent. `version_sync` in
 `/v1/status` shows the presented `client_version` and a `client_updates` count, and
 each followed release logs a `client_version_update` event with both versions.
 
-The request descriptors stay those of the configured release. A patch release
-normally keeps the protocol, but if one changes a message, queries fail as
-protocol errors rather than silently: check `/v1/status` after a followed update.
-Each pool member follows independently.
+If an initialization/recovery worker was explicitly rejected with
+`CLIENT_UPDATE_REQUIRED`, adopting a release rearms that attempt for the next
+protected request. Recovery cooldowns remain in force. Other worker failures stay
+exhausted, and the poller itself never logs in or replays the failed query.
+
+The request descriptors stay those of the configured release. Acceptance by Version
+does not establish compatibility of other methods: protobuf can decode changed
+messages without an error, including unknown fields or changed meanings. Validate
+the queries you rely on after a followed update. Each pool member follows
+independently. Additional regions require their own opt-in, for example
+`[regions.jp.version_sync] follow_client_updates = true`; they do not inherit the
+top-level setting.
 
 Use actual authorized device/SDK values, not arbitrary IDs. The repository and
 image do not embed a service AppKey or operator device values. SDK common fields

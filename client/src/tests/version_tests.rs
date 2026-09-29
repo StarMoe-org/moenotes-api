@@ -178,3 +178,103 @@ async fn malformed_unavailable_and_cancelled_checks_keep_last_good_versions() {
         ErrorKind::Cancelled
     );
 }
+
+#[tokio::test]
+async fn client_adoption_rotates_even_with_unchanged_data_and_preserves_other_blocks() {
+    for blocked in [
+        None,
+        Some(ErrorKind::Version),
+        Some(ErrorKind::Authentication),
+        Some(ErrorKind::DeviceConflict),
+    ] {
+        let (client, mock) = setup();
+        *mock.reply.lock().unwrap() =
+            Ok(serde_json::json!({"version":"master-test","resourceVersion":"resource-test"}));
+        let old = client.generation();
+        *client.session.read().unwrap().blocked.write().unwrap() = blocked;
+        assert!(
+            client
+                .adopt_client_version(old, "1.0.2", CancellationToken::new())
+                .await
+                .unwrap()
+        );
+        assert_ne!(client.generation(), old);
+        assert!(
+            client
+                .matches_identity(client.generation(), &credentials())
+                .unwrap()
+        );
+        assert_eq!(client.session_config().client_version, "1.0.2");
+        assert_eq!(
+            client.query_error(false).map(|e| e.kind),
+            blocked.filter(|kind| *kind != ErrorKind::Version)
+        );
+        assert_eq!(
+            client
+                .adopt_client_version(old, "1.0.3", CancellationToken::new())
+                .await
+                .unwrap_err()
+                .kind,
+            ErrorKind::SessionChanged
+        );
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        let headers = &calls[0].2;
+        assert_eq!(headers.get("x-client-version").unwrap(), "1.0.2");
+        for key in [
+            "x-player-id",
+            "x-player-credential",
+            "x-device-id",
+            "x-player-bid",
+            "x-master-version",
+            "x-resource-version",
+        ] {
+            assert!(!headers.contains_key(key));
+        }
+    }
+}
+
+#[tokio::test]
+async fn rejected_malformed_and_cancelled_candidates_leave_session_unchanged() {
+    let (client, mock) = setup();
+    let generation = client.generation();
+    *client.session.read().unwrap().blocked.write().unwrap() = Some(ErrorKind::Version);
+    for reply in [
+        Err(ErrorKind::Version),
+        Err(ErrorKind::Maintenance),
+        Err(ErrorKind::Transport),
+        Ok(serde_json::json!({"version":"new-master"})),
+    ] {
+        *mock.reply.lock().unwrap() = reply;
+        assert!(
+            client
+                .adopt_client_version(generation, "1.0.2", CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(client.generation(), generation);
+        assert_eq!(client.session_config().client_version, "1.0.1");
+        assert_eq!(client.session_status(), SessionStatus::VersionBlocked);
+    }
+    let calls = mock.calls.lock().unwrap().len();
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    assert_eq!(
+        client
+            .adopt_client_version(generation, "1.0.2", cancel)
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::Cancelled
+    );
+    assert_eq!(
+        client
+            .adopt_client_version(generation, "invalid", CancellationToken::new())
+            .await
+            .unwrap_err()
+            .kind,
+        ErrorKind::InvalidRequest
+    );
+    assert_eq!(mock.calls.lock().unwrap().len(), calls);
+    assert_eq!(client.generation(), generation);
+}

@@ -182,7 +182,10 @@ refreshes master versions automatically.
 
 The total worker deadline is 120 seconds. Cooldown is 60-86400 seconds across
 generations; failure exhausts that generation's attempt without a periodic retry
-loop. SDK expiry, network uncertainty or an absent role requires operator action.
+loop. An explicitly client-version-rejected worker may be retried by the next
+protected request after opt-in client release following adopts a new version;
+the cooldown still applies. SDK expiry, network uncertainty or an absent role
+requires operator action.
 Persistence failure blocks queries even if upstream login succeeded. Session
 rotation invalidates cached results, and locally rejected credentials cannot serve
 old authenticated cache entries.

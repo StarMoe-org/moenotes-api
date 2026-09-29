@@ -110,11 +110,15 @@ file enables loading on the next protected query. Failed initialization is limit
 to one attempt per input revision in a process; unchanged inputs do not loop.
 Fixing malformed files or changing credentials permits another attempt. An
 initialized/pinned username cannot silently switch when a file is replaced.
-Upstream authentication, version or device blocks are not cleared by file changes;
-they require explicit operator action and reload.
+Upstream authentication, version or device blocks are not cleared by file changes.
 The independent anonymous version poller can clear an explicit master mismatch
-when it discovers a changed data-version pair. It never reads account files or
-rearms password attempts and pauses while account initialization/recovery runs.
+when it discovers a changed data-version pair. Opt-in
+[client release following](configuration.md#following-client-releases) can also
+clear a client-version block. If the initialization/recovery worker was explicitly
+rejected with `CLIENT_UPDATE_REQUIRED`, an adopted release permits another attempt
+on the next protected request, retaining the recovery cooldown. Other exhausted
+attempts need operator action. The poller never reads account files or logs in and
+pauses while account initialization/recovery runs.
 
 The initialization deadline is 120 seconds. Cancellation cannot undo a login
 already sent upstream. A failure after in-memory session rotation blocks protected
