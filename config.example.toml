@@ -28,6 +28,8 @@ client_version = ""
 [version_sync]
 enabled = true
 interval_seconds = 60
+# Adopt the next patch client release (1.0.3 -> 1.0.4) once the game refuses this one.
+follow_client_updates = false
 
 [accounts]
 strategy = "single" # "round_robin" uses all files with independent clients; omit selected.

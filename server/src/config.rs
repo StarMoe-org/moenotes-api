@@ -62,6 +62,12 @@ pub struct VersionSyncConfig {
     pub enabled: bool,
     #[serde(default = "version_interval")]
     pub interval_seconds: u64,
+    /// When the game rejects the configured client version, try the next patch
+    /// releases (1.0.3 -> 1.0.4 ...) with the anonymous Version call and keep the first
+    /// it accepts, in memory only. Off by default: the protocol descriptors stay those
+    /// of the configured release.
+    #[serde(default)]
+    pub follow_client_updates: bool,
 }
 fn version_interval() -> u64 {
     60
@@ -71,6 +77,7 @@ impl Default for VersionSyncConfig {
         Self {
             enabled: true,
             interval_seconds: version_interval(),
+            follow_client_updates: false,
         }
     }
 }

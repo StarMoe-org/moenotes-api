@@ -61,7 +61,7 @@ activate queries; SIGHUP does not reread configuration.
 | `[login.sdk_http]` | SDK HTTPS base/allowlist, AppKey, country and optional SDK header. |
 | `[login.sdk_http.common]` | SDK common request fields; values are strings. |
 | `[recovery]` | Opt-in game-session recovery using saved SDK authorization. |
-| `[version_sync]` | Anonymous master/resource version discovery; enabled by default, every 60 seconds. |
+| `[version_sync]` | Anonymous master/resource version discovery; enabled by default, every 60 seconds. Optionally follows patch client releases. |
 
 ## Region and HTTP Paths
 
@@ -157,6 +157,41 @@ is re-established by a successful authenticated query, not by Version success.
 See authenticated `/v1/status` → `session.version_sync` for effective versions,
 check/update counts, last check time and safe error category. Disable this section
 with `enabled=false` for manually pinned or completely offline deployments.
+
+### Following Client Releases
+
+```toml
+[version_sync]
+follow_client_updates = true
+```
+
+After a client release the game refuses the configured `client_version` (the
+Version call fails with `version`), and every query of that region fails until the
+configuration is updated. With `follow_client_updates = true` the poller then tries
+the next three patch releases of the configured `MAJOR.MINOR.PATCH` version in
+order (`1.0.3` → `1.0.4`, `1.0.5`, `1.0.6`), each with the same anonymous Version
+call: no account, SDK token or login is involved.
+
+- A candidate the game also refuses moves on to the next one.
+- The first candidate it accepts is installed together with the versions that call
+  returned, and the version block is cleared. Queries continue under the new
+  version; old cached responses are invalidated as for any version change.
+- Any other answer stops the search until the next check. During a rollout the new
+  release is typically announced with maintenance while the old one is already
+  refused; the poller keeps the old version and retries every interval.
+- Minor and major releases (`1.0.x` → `1.1.0`) are never guessed and still need an
+  operator. Neither is a version whose format is not `MAJOR.MINOR.PATCH`.
+
+The adopted version is kept in memory only; `config.toml` is not rewritten, so a
+restart starts from the configured value and follows again on its first check.
+Update `client_version` in the file to make it permanent. `version_sync` in
+`/v1/status` shows the presented `client_version` and a `client_updates` count, and
+each followed release logs a `client_version_update` event with both versions.
+
+The request descriptors stay those of the configured release. A patch release
+normally keeps the protocol, but if one changes a message, queries fail as
+protocol errors rather than silently: check `/v1/status` after a followed update.
+Each pool member follows independently.
 
 Use actual authorized device/SDK values, not arbitrary IDs. The repository and
 image do not embed a service AppKey or operator device values. SDK common fields

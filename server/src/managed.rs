@@ -48,8 +48,14 @@ pub struct Status {
 pub struct VersionSyncStatus {
     pub interval_seconds: u64,
     pub current: Option<moenotes_client::DataVersions>,
+    /// The client version presented to the game; differs from the configured one
+    /// after an update was followed (`follow_client_updates`).
+    pub client_version: String,
+    pub follow_client_updates: bool,
     pub checks: u64,
     pub updates: u64,
+    /// Client versions adopted since startup.
+    pub client_updates: u64,
     pub last_checked_at: Option<u64>,
     pub last_error: Option<ErrorKind>,
 }

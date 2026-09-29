@@ -34,6 +34,18 @@ all business routes or future authentication validity. Offline tests cover maste
 mismatch recovery, retained authentication/device blocks, malformed responses,
 generation isolation and coexistence with account recovery.
 
+## JP Client Release (2026-09-29)
+
+JP client 1.0.4 was released on the App Store on 2026-09-29 around 11:38 UTC,
+during a maintenance. Anonymous Version calls observed from a development machine:
+presenting 1.0.3 answered `version` (update required), while 1.0.4 and higher
+answered `maintenance`; after the maintenance, 1.0.4 was accepted with
+`x-asset-version` present. The deployed gateway, still configured with 1.0.3,
+reported `version` from its version poll and its JP queries. This is the rollout
+behavior `follow_client_updates` relies on: a refused version moves to the next
+patch, and maintenance waits. The option itself was verified with offline tests,
+not yet by a deployed rollout.
+
 ## Authentication and Persistence
 
 - Rust SDK RSA and email/password login returned success after fixing public-key

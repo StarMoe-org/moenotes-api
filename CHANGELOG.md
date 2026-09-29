@@ -2,6 +2,20 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## Unreleased
+
+- Add opt-in `[version_sync] follow_client_updates`. When the anonymous Version
+  call reports the configured client version as outdated, the poller tries the
+  next three patch releases (`1.0.3` -> `1.0.4`...) with the same anonymous call
+  and adopts the first one the game accepts, together with the versions it
+  returns, clearing the version block. A candidate answered with maintenance (a
+  release still rolling out) stops the search until the next check. Minor/major
+  releases are never guessed; the adopted version lives in memory only.
+- `version_sync` status gains `client_version`, `follow_client_updates` and
+  `client_updates`; a followed release logs `client_version_update`.
+- Add `moenotes_client::patch_successors` and `Client::adopt_client_version`, and
+  `follow_client_updates` to the experimental Rust `VersionSyncConfig` struct.
+
 ## 0.1.0-alpha.8 - 2026-09-29
 
 - Add opt-in `accounts.strategy = "round_robin"` within each region, with an
