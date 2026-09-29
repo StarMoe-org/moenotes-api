@@ -1,7 +1,8 @@
 //! Region routing. Every backend owns its session and cache.
 use crate::{
-    cache::{CacheOptions, QueryCache},
+    cache::CacheOptions,
     managed::ManagedClient,
+    pool::{SessionMember, SessionPool},
 };
 use moenotes_client::{CancellationToken, ClientError, QueryClient};
 use serde::{Deserialize, Serialize};
@@ -58,8 +59,7 @@ pub struct RegionClients {
     default_region: Option<Region>,
 }
 struct Backend {
-    cache: Arc<QueryCache>,
-    managed: Option<Arc<ManagedClient>>,
+    pool: Arc<SessionPool>,
 }
 impl RegionClients {
     pub fn new(
@@ -69,19 +69,31 @@ impl RegionClients {
         stop: CancellationToken,
     ) -> Result<Self, ClientError> {
         options.validate()?;
-        let mut result = Self::default();
-        for backend in backends {
-            if result
-                .backends
-                .insert(
+        let pools = backends
+            .into_iter()
+            .map(|backend| {
+                Ok((
                     backend.region,
-                    Backend {
-                        cache: QueryCache::new(backend.client, options.clone(), stop.clone()),
-                        managed: backend.managed,
-                    },
-                )
-                .is_some()
-            {
+                    SessionPool::new(
+                        vec![SessionMember {
+                            client: backend.client,
+                            managed: backend.managed,
+                        }],
+                        options.clone(),
+                        stop.clone(),
+                    )?,
+                ))
+            })
+            .collect::<Result<Vec<_>, ClientError>>()?;
+        Self::with_pools(default_region, pools)
+    }
+    pub fn with_pools(
+        default_region: Option<Region>,
+        pools: Vec<(Region, Arc<SessionPool>)>,
+    ) -> Result<Self, ClientError> {
+        let mut result = Self::default();
+        for (region, pool) in pools {
+            if result.backends.insert(region, Backend { pool }).is_some() {
                 return Err(ClientError::new(moenotes_client::ErrorKind::InvalidConfig));
             }
         }
@@ -91,14 +103,14 @@ impl RegionClients {
         result.default_region = default_region;
         Ok(result)
     }
-    pub(crate) fn cache(&self, region: Region) -> Option<&Arc<QueryCache>> {
-        self.backends.get(&region).map(|b| &b.cache)
+    pub(crate) fn cache(&self, region: Region) -> Option<&Arc<SessionPool>> {
+        self.backends.get(&region).map(|b| &b.pool)
     }
-    pub(crate) fn default_cache(&self) -> Option<Arc<QueryCache>> {
+    pub(crate) fn default_cache(&self) -> Option<Arc<SessionPool>> {
         self.default_region
             .and_then(|region| self.cache(region).cloned())
     }
     pub fn status(&self) -> serde_json::Value {
-        serde_json::Value::Object(self.backends.iter().map(|(region, b)| (region.as_str().into(), serde_json::json!({"ready": b.managed.as_ref().is_some_and(|m|m.ready()), "session":b.managed.as_ref().map(|m|m.status())}))).collect())
+        serde_json::Value::Object(self.backends.iter().map(|(region, b)| (region.as_str().into(), serde_json::json!({"ready": b.pool.ready(), "session":b.pool.single_status(), "pool":b.pool.status()}))).collect())
     }
 }

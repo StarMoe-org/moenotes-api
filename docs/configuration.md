@@ -55,7 +55,7 @@ activate queries; SIGHUP does not reread configuration.
 | `api_key` | Your HTTP bearer key, 32-4096 ASCII characters without whitespace. |
 | `response_mode` | Keep `public` for shared callers; `raw` is trusted-operator-only. |
 | `[session]` | Region, approved game HTTPS origin, platform and client/data versions. |
-| `[accounts]` | Account directory, optional selected file, role creation and SDK readiness. |
+| `[accounts]` | Account directory, single/round_robin strategy, optional selected file, role creation and SDK readiness. |
 | `[login]` | Persistent `state_dir`, writable by the service user. |
 | `[login.context]` | Observed Android device model, OS, identifier and channel numbers. |
 | `[login.sdk_http]` | SDK HTTPS base/allowlist, AppKey, country and optional SDK header. |
@@ -109,7 +109,7 @@ Never combine `credentials_file` with `login` for the same backend.
 Authentication sources are explicit per region and are not inherited. Device/SDK
 settings can point to the same authorized source files, and account directories
 may share an authorized SDK account, but each login state directory must be a
-different private directory. The loader still initializes only the selected target
+different private directory. With the default single strategy, the loader initializes only the selected target
 region on a protected request; startup does not create roles across all regions.
 Create state directories as UID/GID 65532, mode 0700. Paths resolve relative to
 the single config file. Duplicate canonical regions, duplicate origins and shared
@@ -214,3 +214,5 @@ Providing both sources is rejected, even if the file path is empty. Relative
 legacy paths still resolve against the config directory. Static `credentials_file`
 and manual operator login remain available without `[accounts]`; do not combine
 static credentials with managed login. Saved SDK/game snapshots are unchanged.
+
+For multiple independent accounts in one region, see [session pools](session-pool.md).

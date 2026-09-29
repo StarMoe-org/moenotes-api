@@ -175,7 +175,10 @@ The server also supports optional lazy `/accounts` loading from private
 `{"user":"EMAIL","password":"PASSWORD"}` JSON files. The first protected query
 loads a persisted session or logs in, creating a regional role only if pre-login
 reports none. Health/status never trigger login; missing accounts leave health at
-200. One account/region is selected per instance. See [account directory setup](docs/accounts.md)
+200. Each region selects one account by default. Opt-in
+[`strategy = "round_robin"`](docs/session-pool.md) creates independent clients
+and caches for all account files and distributes requests within that region.
+See [account directory setup](docs/accounts.md)
 for permissions, SDK-readiness confirmation, selection and retry behavior.
 
 Query routes accept

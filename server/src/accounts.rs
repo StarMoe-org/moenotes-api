@@ -28,12 +28,22 @@ fn invalid() -> ClientError {
     ClientError::new(ErrorKind::InvalidConfig)
 }
 
+#[derive(Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AccountStrategy {
+    #[default]
+    Single,
+    RoundRobin,
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AccountsConfig {
     #[serde(default = "directory")]
     pub directory: PathBuf,
     pub selected: Option<String>,
+    #[serde(default)]
+    pub strategy: AccountStrategy,
     #[serde(default = "yes")]
     pub allow_create: bool,
     /// Explicit assertion that required SDK consent/post-login steps are complete.
@@ -44,6 +54,7 @@ impl AccountsConfig {
     pub fn validate(&self) -> Result<(), ClientError> {
         if self.directory.as_os_str().is_empty()
             || self.selected.as_deref().is_some_and(|s| !valid_name(s))
+            || self.strategy == AccountStrategy::RoundRobin && self.selected.is_some()
         {
             return Err(invalid());
         }
@@ -428,6 +439,7 @@ mod tests {
             AccountsConfig {
                 directory: accounts,
                 selected: None,
+                strategy: AccountStrategy::Single,
                 allow_create: true,
                 sdk_ready: true,
             },

@@ -95,3 +95,47 @@ results do not establish feature availability or absence for every account.
 Ranking depth, tie rules, high-volume limits, ongoing event queries, public field
 filtering and multi-account concurrency still need targeted validation. A successful
 snapshot does not imply credentials remain valid after another login.
+
+## Independent JP sessions — 2026-09-29
+
+A temporary localhost server using the account-pool implementation loaded ten
+existing authorized JP credential files with `strategy = "round_robin"`.
+The first protected request returned 503 and triggered local import; no JP
+registration, password write, device override or transfer was performed.
+
+- Twenty profile queries returned 200 with the requested profile identity.
+- Every session received exactly two assigned queries: ten initial MISS results,
+  followed by ten HIT results from the corresponding per-session caches.
+- All ten sessions reported ready, zero query errors, and one successful local
+  import each. `/readyz` returned 200.
+- SIGHUP rearmed all members. Following the initial 503/import, ten queries
+  returned 200/MISS, verifying cache invalidation and reuse of saved credentials.
+- Account files were byte-for-byte unchanged. The temporary server shut down
+  successfully; the production deployment was not changed.
+
+This validates sequential live rotation, import, caching and reload. It does not
+measure live concurrent throughput or service rate limits. Synthetic offline
+tests separately verify ten independent Client queues and concurrent fairness.
+
+## Four-region session pools — 2026-09-29
+
+Four additional authorized international SDK accounts were tested against TW,
+EN and KR alongside the ten existing JP sessions in one localhost server.
+Four SDK password logins succeeded, including literal-plus email addresses.
+After explicit role-creation authorization, eleven missing regional roles were
+created; one TW role already existed. The approved SDK authorizations were reused
+for EN/KR with explicitly scoped snapshots, without another password login.
+
+- TW/EN/KR each retained four distinct game sessions; JP retained ten.
+  All twelve international player IDs and game credentials were distinct.
+- Forty-four interleaved authenticated queries returned 200: eight favorite-status
+  queries per international region and twenty JP profile queries. Every session
+  received exactly two queries, first MISS then HIT. All twenty-two sessions were
+  ready; region headers and JP profile identities matched their requests.
+- After stopping and restarting the process, all twenty-two sessions loaded
+  from private disk state. Twenty-two further authenticated queries returned
+  200/MISS. The saved international state files were byte-for-byte unchanged;
+  no repeat SDK password login or role creation occurred.
+- Input account files were unchanged; temporary processes exited successfully.
+  The production deployment was not changed. This is a bounded sequential live
+  test, not a concurrent throughput or long-term credential-lifetime guarantee.

@@ -49,6 +49,11 @@ platform = "android"
 client_version = "1.0.3"
 ```
 
+To distribute requests across multiple JP accounts, replace `selected` with
+`strategy = "round_robin"`. Each JSON gets its own client, session and cache;
+see [session pools](session-pool.md). The HTTP service still never creates JP
+accounts. Use a single-account configuration for `jp-check` operator validation.
+
 For a JP-only config use `[accounts]` / `[session]`, plus normal HTTP key/listen
 settings. JP has no SDK `[login]` section and rejects automatic recovery.
 The first authenticated query triggers local import and returns the existing

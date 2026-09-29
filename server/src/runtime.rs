@@ -1,6 +1,6 @@
 //! One independently configured upstream and its authentication lifecycle.
 use crate::{
-    accounts::{AccountDirectoryClient, JpAccountDirectoryClient},
+    accounts::{AccountDirectoryClient, AccountStrategy, JpAccountDirectoryClient, file_list},
     config::Config,
     managed::{GameRecovery, ManagedClient, Recovery},
 };
@@ -17,8 +17,50 @@ pub struct Runtime {
     jp_accounts: bool,
 }
 impl Runtime {
+    /// Discover filenames only; each member still loads its credentials lazily.
+    /// Membership is fixed until restart. SIGHUP reloads the existing members.
+    pub fn for_accounts(
+        config: Config,
+        stop: CancellationToken,
+    ) -> Result<Vec<Arc<Self>>, ClientError> {
+        let Some(accounts) = config
+            .accounts
+            .as_ref()
+            .filter(|a| a.strategy == AccountStrategy::RoundRobin)
+        else {
+            return Ok(vec![Arc::new(Self::new(config, stop)?)]);
+        };
+        let files = file_list(accounts)?;
+        if files.len() > crate::pool::MAX_SESSIONS {
+            return Err(ClientError::new(moenotes_client::ErrorKind::InvalidConfig));
+        }
+        files
+            .into_iter()
+            .map(|file| {
+                let mut member = config.clone();
+                member.regions.clear();
+                let accounts = member.accounts.as_mut().unwrap();
+                accounts.strategy = AccountStrategy::Single;
+                accounts.selected = Some(
+                    file.file_name()
+                        .and_then(|n| n.to_str())
+                        .ok_or_else(|| ClientError::new(moenotes_client::ErrorKind::InvalidConfig))?
+                        .to_owned(),
+                );
+                Self::new(member, stop.clone()).map(Arc::new)
+            })
+            .collect()
+    }
+
     /// Validate local state without reading passwords or making upstream requests.
     pub fn new(config: Config, stop: CancellationToken) -> Result<Self, ClientError> {
+        if config
+            .accounts
+            .as_ref()
+            .is_some_and(|a| a.strategy != AccountStrategy::Single)
+        {
+            return Err(ClientError::new(moenotes_client::ErrorKind::InvalidConfig));
+        }
         if let Some(login) = &config.login {
             login.validate(&config.session)?;
         }

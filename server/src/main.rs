@@ -184,55 +184,81 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         _ => return Err("unknown command".into()),
     }
     let stop = moenotes_client::CancellationToken::new();
-    let default = Arc::new(moenotes_server::runtime::Runtime::new(
-        config.clone(),
-        stop.clone(),
-    )?);
-    let mut runtimes = vec![default.clone()];
-    let mut backends = Vec::new();
-    if let Some(region) = moenotes_server::regions::Region::from_session(&config.session.region) {
-        backends.push(moenotes_server::regions::RegionBackend {
-            region,
-            client: default.managed.clone(),
-            managed: Some(default.managed.clone()),
-        });
-    }
-    for (region, settings) in &config.regions {
-        let runtime = Arc::new(moenotes_server::runtime::Runtime::new(
-            config.for_region(settings),
-            stop.clone(),
-        )?);
-        backends.push(moenotes_server::regions::RegionBackend {
-            region: *region,
-            client: runtime.managed.clone(),
-            managed: Some(runtime.managed.clone()),
-        });
-        runtimes.push(runtime);
-    }
-    if command == "auth-status" {
-        println!(
-            "{}",
-            serde_json::json!({"session":format!("{:?}",default.client.session_status()),"recovery_enabled":config.recovery.enabled,"accounts_enabled":config.accounts.is_some(),"network_checked":false,"regions":runtimes.iter().filter_map(|r|moenotes_server::regions::Region::from_session(&r.config.session.region).map(|region|(region.as_str(),serde_json::json!({"session":format!("{:?}",r.client.session_status()),"recovery_enabled":r.config.recovery.enabled,"accounts_enabled":r.config.accounts.is_some()})))).collect::<std::collections::BTreeMap<_,_>>()})
-        );
-        return Ok(());
-    }
+    let default_runtimes =
+        moenotes_server::runtime::Runtime::for_accounts(config.clone(), stop.clone())?;
+    let default = default_runtimes.first().cloned();
     let cache_options = CacheOptions {
         ttl: Duration::from_secs(config.cache_ttl_seconds),
         capacity: config.cache_capacity,
         ..Default::default()
     };
-    let regions = moenotes_server::regions::RegionClients::new(
-        moenotes_server::regions::Region::from_session(&config.session.region),
-        backends,
-        cache_options.clone(),
-        stop.clone(),
-    )?;
+    let make_pool = |members: &[Arc<moenotes_server::runtime::Runtime>]| {
+        moenotes_server::pool::SessionPool::new(
+            members
+                .iter()
+                .map(|runtime| moenotes_server::pool::SessionMember {
+                    client: runtime.managed.clone(),
+                    managed: Some(runtime.managed.clone()),
+                })
+                .collect(),
+            cache_options.clone(),
+            stop.clone(),
+        )
+    };
+    let default_pool = make_pool(&default_runtimes)?;
+    let mut runtimes = default_runtimes;
+    let mut pools = Vec::new();
+    let default_region = moenotes_server::regions::Region::from_session(&config.session.region);
+    if let Some(region) = default_region {
+        pools.push((region, default_pool.clone()));
+    }
+    for (region, settings) in &config.regions {
+        let members = moenotes_server::runtime::Runtime::for_accounts(
+            config.for_region(settings),
+            stop.clone(),
+        )?;
+        pools.push((*region, make_pool(&members)?));
+        runtimes.extend(members);
+    }
+    let regions = moenotes_server::regions::RegionClients::with_pools(default_region, pools)?;
+    if command == "auth-status" {
+        let region_status: std::collections::BTreeMap<_, _> = default_region.into_iter()
+            .chain(config.regions.keys().copied())
+            .map(|region| {
+                let members: Vec<_> = runtimes.iter().filter(|r|
+                    moenotes_server::regions::Region::from_session(&r.config.session.region) == Some(region)
+                ).collect();
+                (region.as_str(), serde_json::json!({
+                    "session": if members.len() == 1 {Some(format!("{:?}", members[0].client.session_status()))} else {None},
+                    "recovery_enabled": members.first().is_some_and(|r| r.config.recovery.enabled),
+                    "accounts_enabled": members.first().is_some_and(|r| r.config.accounts.is_some()),
+                    "sessions": members.len()
+                }))
+            }).collect();
+        println!(
+            "{}",
+            serde_json::json!({
+                "session": if default_pool.status()["sessions"] == 1 {default.as_ref().map(|r|format!("{:?}",r.client.session_status()))} else {None},
+                "recovery_enabled":config.recovery.enabled,"accounts_enabled":config.accounts.is_some(),
+                "network_checked":false,"pool":default_pool.status(),"regions":region_status
+            })
+        );
+        return Ok(());
+    }
+    let fallback: Arc<dyn moenotes_client::QueryClient> = match &default {
+        Some(runtime) => runtime.managed.clone(),
+        None => Arc::new(moenotes_client::Client::new(
+            config.session.clone(),
+            None,
+            config.client_options(),
+        )?),
+    };
     let app = moenotes_server::router_with_regions(
-        default.managed.clone(),
+        fallback,
         config.read_api_key()?,
         RouterOptions {
             mode: config.mode(),
-            managed: Some(default.managed.clone()),
+            managed: default.as_ref().map(|r| r.managed.clone()),
             access_log: config.access_log,
         },
         cache_options,

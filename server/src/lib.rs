@@ -9,6 +9,7 @@ pub mod managed;
 mod openapi;
 pub mod operator;
 mod path_routes;
+pub mod pool;
 pub mod projection;
 mod query_params;
 pub mod regions;
@@ -25,8 +26,9 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
-use cache::{CacheOptions, QueryCache};
+use cache::CacheOptions;
 use moenotes_client::{CancellationToken, ClientError, ErrorKind, QueryClient};
+use pool::{SessionMember, SessionPool};
 use sha2::{Digest, Sha256};
 use std::{
     sync::Arc,
@@ -59,12 +61,11 @@ pub fn openapi_document(mode: projection::ResponseMode) -> serde_json::Value {
 
 #[derive(Clone)]
 struct ApiState {
-    cache: Arc<QueryCache>,
+    cache: Arc<SessionPool>,
     key_hash: [u8; 32],
     admission: Arc<tokio::sync::Semaphore>,
     mode: projection::ResponseMode,
     diagnostics: Arc<diagnostics::Diagnostics>,
-    managed: Option<Arc<managed::ManagedClient>>,
     access_log: bool,
     profiles: Arc<regions::RegionClients>,
 }
@@ -134,25 +135,33 @@ pub fn router_with_regions(
     {
         return Err(ClientError::new(ErrorKind::InvalidConfig));
     }
+    let cache = match profiles.default_cache() {
+        Some(cache) => cache,
+        None => SessionPool::new(
+            vec![SessionMember {
+                client,
+                managed: router_options.managed,
+            }],
+            options,
+            stop,
+        )?,
+    };
     let state = ApiState {
-        cache: profiles
-            .default_cache()
-            .unwrap_or_else(|| QueryCache::new(client, options, stop)),
+        cache,
         key_hash: Sha256::digest(api_key.as_bytes()).into(),
         admission: Arc::new(tokio::sync::Semaphore::new(64)),
         mode: router_options.mode,
         diagnostics: Arc::new(diagnostics::Diagnostics::default()),
-        managed: router_options.managed,
         access_log: router_options.access_log,
         profiles: Arc::new(profiles),
     };
     let mode = state.mode;
     let mut protected = Router::new().route("/openapi.json", get(move || async move { Json(openapi::document_for(mode)) }))
         .route("/readyz",get(|State(state):State<ApiState>|async move {
-            let ready=state.managed.as_ref().is_some_and(|m|m.ready());
+            let ready=state.cache.ready();
             (if ready {StatusCode::OK}else{StatusCode::SERVICE_UNAVAILABLE},Json(serde_json::json!({"ready":ready})))
         }))
-        .route("/v1/status",get(|State(state):State<ApiState>|async move {Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"responseMode":state.mode,"session":state.managed.as_ref().map(|m|m.status()),"regions":state.profiles.status(),"diagnostics":state.diagnostics.snapshot()}))}));
+        .route("/v1/status",get(|State(state):State<ApiState>|async move {Json(serde_json::json!({"version":env!("CARGO_PKG_VERSION"),"responseMode":state.mode,"session":state.cache.single_status(),"pool":state.cache.status(),"regions":state.profiles.status(),"diagnostics":state.diagnostics.snapshot()}))}));
     if mode != projection::ResponseMode::Disabled {
         protected = path_routes::install(protected);
         for &(path, name) in ROUTES {

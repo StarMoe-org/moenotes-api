@@ -2,6 +2,19 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## 0.1.0-alpha.8 - 2026-09-29
+
+- Add opt-in `accounts.strategy = "round_robin"` within each region, with an
+  independent client, session, queue and cache per account. Preserve single-account
+  selection by default. Skip blocked sessions and cool down transient failures
+  without replaying failed queries. Add sanitized per-session dispatch counters.
+- Pool membership is discovered at startup (maximum 32 accounts per region);
+  SIGHUP reloads existing members independently. Readiness accepts any ready
+  member; multi-session status uses `pool.members` with the legacy `session` null.
+- Add `strategy` to the experimental Rust `AccountsConfig` struct; direct
+  literals must supply `AccountStrategy::Single` to preserve previous behavior.
+  HTTP query paths, public projection and session snapshot formats are unchanged.
+
 ## 0.1.0-alpha.7 - 2026-09-29
 
 - Add JP credential import under `/accounts/jp`, and organize new international

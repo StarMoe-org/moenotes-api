@@ -240,6 +240,11 @@ impl Config {
             }
         }
         if let Some(accounts) = &mut config.accounts {
+            if accounts.strategy == crate::accounts::AccountStrategy::RoundRobin
+                && crate::regions::Region::from_session(&config.session.region).is_none()
+            {
+                return Err(invalid());
+            }
             if config.session.region == "jp"
                 && accounts.directory == Path::new("/accounts/international")
             {

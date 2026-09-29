@@ -30,6 +30,7 @@ enabled = true
 interval_seconds = 60
 
 [accounts]
+strategy = "single" # "round_robin" uses all files with independent clients; omit selected.
 directory = "/accounts/international"
 # selected = "worker.json" # Required when multiple account JSON files exist.
 allow_create = true # Only when pre-login reports no role in this region.
@@ -95,6 +96,7 @@ isRoot = ""
 
 # JP uses credential import only; no [regions.jp.login] or recovery.
 # [regions.jp.accounts]
+# strategy = "round_robin" # Optional; incompatible with selected below.
 # directory = "/accounts/jp"
 # selected = "worker.json"
 # [regions.jp.session]

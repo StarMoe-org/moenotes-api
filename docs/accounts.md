@@ -49,11 +49,13 @@ buffers on drop on a best-effort basis.
 
 - Enable directory login explicitly with `[accounts]`; its default path is
   `/accounts/international`. Without this section, existing static/managed login is unchanged.
-- Each regional backend serves **one selected account and one configured region**.
+- Each regional backend uses **one selected account by default**.
   A process can host additional [regional backends](configuration.md#multiple-regions).
   One
   visible `.json` file is selected automatically. Multiple files require `selected`
-  to name one basename; there is no account rotation or load balancing.
+  to name one basename. To use every account through independent clients and
+  round robin, set `strategy = "round_robin"` and omit `selected`; see
+  [session pools](session-pool.md) for limits, lifecycle and cache isolation.
 - Account files must be regular, non-symlink files, at most 64 KiB, mode 0600 or
   stricter. Unknown/duplicate JSON fields, empty values and unsafe names fail closed.
   Username/password limits are 1024/4096 UTF-8 bytes. Directory mode is 0700 or
