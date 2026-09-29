@@ -4,6 +4,8 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+## 0.1.0-alpha.9 - 2026-09-29
+
 - Add opt-in `[version_sync] follow_client_updates`. When the anonymous Version
   call reports the configured client version as outdated, the poller tries the
   next three patch releases (`1.0.3` -> `1.0.4`...) with the same anonymous call

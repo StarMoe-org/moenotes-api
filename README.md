@@ -54,12 +54,12 @@ All query modes require a bearer key. Public mode is not anonymization.
 ## Install
 
 Release images are published to the public GitHub Container Registry package
-`ghcr.io/luoxiadesu/moenotes-api` for Linux `amd64` and `arm64`. No registry login
+`ghcr.io/starmoe-org/moenotes-api` for Linux `amd64` and `arm64`. No registry login
 is required to pull public images:
 
 ```sh
-docker pull ghcr.io/luoxiadesu/moenotes-api:0.1.0-alpha.4
-docker run --rm --network none ghcr.io/luoxiadesu/moenotes-api:0.1.0-alpha.4 --version
+docker pull ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.9
+docker run --rm --network none ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.9 --version
 ```
 
 Use an exact version or the immutable digest listed in the GitHub Release.
@@ -210,7 +210,7 @@ docker run --rm --cap-drop ALL --security-opt no-new-privileges \
   --mount type=bind,src=/absolute/operator-config,dst=/etc/moenotes,readonly \
   --mount type=bind,src=/absolute/accounts,dst=/accounts,readonly \
   --mount type=bind,src=/absolute/state,dst=/var/lib/moenotes \
-  ghcr.io/luoxiadesu/moenotes-api:0.1.0-alpha.4
+  ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.9
 ```
 
 Set the mounted config's `listen` to `0.0.0.0:8080` inside the container. The image

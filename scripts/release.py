@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(alpha|beta|rc)\.(0|[1-9][0-9]*))?")
 
 
-def metadata(root=ROOT, tag="", repository="luoxiadesu/moenotes-api"):
+def metadata(root=ROOT, tag="", repository="StarMoe-org/moenotes-api"):
     manifest = tomllib.loads((root / "Cargo.toml").read_text())
     version = manifest["workspace"]["package"]["version"]
     if not VERSION.fullmatch(version) or tag and tag != f"v{version}":
@@ -34,7 +34,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag", default="")
     args = parser.parse_args()
-    result = metadata(tag=args.tag, repository=os.environ.get("GITHUB_REPOSITORY", "luoxiadesu/moenotes-api"))
+    result = metadata(tag=args.tag, repository=os.environ.get("GITHUB_REPOSITORY", "StarMoe-org/moenotes-api"))
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a") as stream:
             for key in ("version", "image"):

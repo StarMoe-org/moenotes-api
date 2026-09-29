@@ -29,7 +29,7 @@ RUN cargo build --locked --release -p moenotes-server
 FROM ${RUNTIME_IMAGE}
 ARG VERSION=unknown
 ARG REVISION=unknown
-ARG SOURCE=https://github.com/luoxiadesu/moenotes-api
+ARG SOURCE=https://github.com/StarMoe-org/moenotes-api
 LABEL org.opencontainers.image.title="moenotes-api" \
       org.opencontainers.image.description="Our Notes API client and HTTP query gateway" \
       org.opencontainers.image.version="${VERSION}" \

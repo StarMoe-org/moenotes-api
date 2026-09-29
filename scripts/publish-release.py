@@ -25,7 +25,15 @@ def main():
     if not all(re.fullmatch(r"sha256:[0-9a-f]{64}", value) for value in digests.values()):
         raise ValueError("invalid image digest")
     owner, package = repo.lower().split("/")
-    details = json.loads(run("gh", "api", f"/users/{owner}/packages/container/{package}"))
+    details = None
+    for prefix in ("orgs", "users"):
+        try:
+            details = json.loads(run("gh", "api", f"/{prefix}/{owner}/packages/container/{package}"))
+            break
+        except Exception:
+            continue
+    if not details:
+        raise ValueError(f"could not fetch GHCR package details for {owner}/{package}")
     if (details.get("visibility") != "public"
             or details.get("repository", {}).get("full_name", "").lower() != repo.lower()):
         raise ValueError("GHCR package must be public and linked to this repository; change package visibility in GitHub settings, then rerun this job")
