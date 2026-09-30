@@ -4,6 +4,10 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+- Classify malformed protobuf responses as `protocol` instead of `transport` for
+  query and JP image-credential requests. Preserve business-code priority and
+  redact decoder/status text from HTTP errors.
+
 ## 0.1.0-alpha.11 - 2026-09-30
 
 - Add authenticated TW/EN/KR profile-card PNG routes alongside the unchanged JP

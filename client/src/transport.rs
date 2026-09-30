@@ -3,7 +3,7 @@ use bytes::Buf;
 
 use prost::Message;
 use prost_reflect::{DynamicMessage, MessageDescriptor};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tonic::{
     Code, Request, Status,
     codec::{Codec, DecodeBuf, Decoder, EncodeBuf, Encoder},
@@ -148,8 +148,7 @@ impl Transport for GrpcTransport {
 }
 
 fn status_error(status: Status, initial: &MetadataMap) -> ClientError {
-    ClientError::from_metadata(status.code(), initial, status.metadata())
-        .unwrap_or_else(|| ClientError::new(ErrorKind::Protocol))
+    ClientError::from_status(&status, initial)
 }
 
 #[derive(Clone)]
@@ -183,7 +182,11 @@ impl Decoder for DynamicDecoder {
         let bytes = src.copy_to_bytes(src.remaining());
         DynamicMessage::decode(self.0.clone(), bytes)
             .map(Some)
-            .map_err(|_| Status::internal("protobuf decode failed"))
+            .map_err(|error| {
+                let mut status = Status::internal("protobuf decode failed");
+                status.set_source(Arc::new(error));
+                status
+            })
     }
 }
 

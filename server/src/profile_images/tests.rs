@@ -753,3 +753,58 @@ async fn international_downloads_have_no_credentials_or_redirect_retries() {
     }
     server.abort();
 }
+
+#[tokio::test]
+async fn malformed_cdn_version_is_a_redacted_http_protocol_error() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let stop = CancellationToken::new();
+    let shutdown = stop.clone();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let requests = calls.clone();
+    let router = Router::new().fallback(move |request: axum::extract::Request| {
+        let requests = requests.clone();
+        async move {
+            assert_eq!(
+                request.uri().path(),
+                "/app.masterdata.MasterdataService/Version"
+            );
+            requests.fetch_add(1, Ordering::SeqCst);
+            http::Response::builder()
+                .header("content-type", "application/grpc")
+                .header("grpc-status", "0")
+                .body(Body::from(&b"\0\0\0\0\x01\xff"[..]))
+                .unwrap()
+        }
+    });
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router)
+            .with_graceful_shutdown(shutdown.cancelled_owned())
+            .await
+            .unwrap()
+    });
+    let mut source = LiveSource::new(jp_client()).unwrap();
+    source.channel = Endpoint::from_shared(format!("http://{address}"))
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    let images = ProfileImages::with_source(Arc::new(source), stop.clone());
+    let response = app(profile(), images, ResponseMode::Public)
+        .oneshot(request(
+            &format!("/v1/jp/profile/{ID}/card/1"),
+            "GET",
+            true,
+            "",
+        ))
+        .await
+        .unwrap();
+    stop.cancel();
+    server.await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert_eq!(response.headers()["cache-control"], "no-store");
+    let body: serde_json::Value =
+        serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
+    assert_eq!(body, serde_json::json!({"error":{"kind":"protocol"}}));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}

@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tonic::{Code, metadata::MetadataMap};
+use tonic::{Code, Status, metadata::MetadataMap};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +54,20 @@ impl ClientError {
     /// Explicit diagnostics only. Values remain untrusted and must not be logged.
     pub fn business_codes(&self) -> (&[String], &[String]) {
         (&self.business_codes.initial, &self.business_codes.trailing)
+    }
+
+    /// Classify a gRPC failure without trusting its status text. Local protobuf
+    /// decoding failures retain their typed source; business codes keep priority.
+    pub fn from_status(status: &Status, initial: &MetadataMap) -> Self {
+        let mut error = Self::from_metadata(status.code(), initial, status.metadata())
+            .unwrap_or_else(|| Self::new(ErrorKind::Protocol));
+        if error.kind == ErrorKind::Transport
+            && std::error::Error::source(status)
+                .is_some_and(|source| source.is::<prost::DecodeError>())
+        {
+            error.kind = ErrorKind::Protocol;
+        }
+        error
     }
 
     pub fn from_metadata(

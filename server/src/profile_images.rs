@@ -480,8 +480,7 @@ impl LiveSource {
     }
 }
 fn grpc_error(status: tonic::Status, initial: &MetadataMap) -> ClientError {
-    ClientError::from_metadata(status.code(), initial, status.metadata())
-        .unwrap_or_else(|| err(ErrorKind::Protocol))
+    ClientError::from_status(&status, initial)
 }
 fn credential_from_metadata(
     initial: &MetadataMap,
