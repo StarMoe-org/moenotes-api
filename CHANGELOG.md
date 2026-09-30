@@ -4,6 +4,8 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+## 0.1.0-alpha.11 - 2026-09-30
+
 - Add authenticated TW/EN/KR profile-card PNG routes alongside the unchanged JP
   route: `/v1/{region}/profile/{profileId}/card/{page}`. Keep profile/session and
   image caches region-isolated; international downloads use no CDN credentials.
