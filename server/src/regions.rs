@@ -57,29 +57,41 @@ pub struct RegionBackend {
 pub struct RegionClients {
     backends: BTreeMap<Region, Backend>,
     default_region: Option<Region>,
-    images: Option<Arc<crate::profile_images::ProfileImages>>,
+    images: BTreeMap<Region, Arc<crate::profile_images::ProfileImages>>,
 }
 struct Backend {
     pool: Arc<SessionPool>,
 }
 impl RegionClients {
-    /// Enable the JP card proxy using this live client's effective client version.
-    /// Only the official JP API/CDN origins are supported. No network request is
-    /// made here; CDN authorization is discovered lazily without player credentials.
+    /// Enable this client's regional card proxy. JP uses its effective client version
+    /// for anonymous CDN credential discovery; international downloads are public.
+    /// Construction makes no network request.
     pub fn enable_profile_images(
         &mut self,
         client: Arc<moenotes_client::Client>,
         stop: CancellationToken,
     ) -> Result<(), ClientError> {
-        self.images = Some(crate::profile_images::ProfileImages::new(client, stop)?);
+        let region = Region::from_session(&client.session_config().region)
+            .ok_or_else(|| ClientError::new(moenotes_client::ErrorKind::InvalidConfig))?;
+        self.images.insert(
+            region,
+            crate::profile_images::ProfileImages::new(client, stop)?,
+        );
         Ok(())
     }
-    pub(crate) fn profile_images(&self) -> Option<&Arc<crate::profile_images::ProfileImages>> {
-        self.images.as_ref()
+    pub(crate) fn profile_images(
+        &self,
+        region: Region,
+    ) -> Option<&Arc<crate::profile_images::ProfileImages>> {
+        self.images.get(&region)
     }
     #[cfg(test)]
-    pub(crate) fn set_profile_images(&mut self, images: Arc<crate::profile_images::ProfileImages>) {
-        self.images = Some(images);
+    pub(crate) fn set_profile_images(
+        &mut self,
+        region: Region,
+        images: Arc<crate::profile_images::ProfileImages>,
+    ) {
+        self.images.insert(region, images);
     }
     pub fn new(
         default_region: Option<Region>,

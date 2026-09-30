@@ -221,11 +221,20 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
         runtimes.extend(members);
     }
     let mut regions = moenotes_server::regions::RegionClients::with_pools(default_region, pools)?;
-    if let Some(runtime) = runtimes.iter().find(|r| {
-        r.config.session.region == "jp"
-            && r.config.session.origin.trim_end_matches('/') == "https://api.bang-dream-on.jp"
-    }) {
-        regions.enable_profile_images(runtime.client.clone(), stop.clone())?;
+    for region in [
+        moenotes_server::regions::Region::Tw,
+        moenotes_server::regions::Region::En,
+        moenotes_server::regions::Region::Kr,
+        moenotes_server::regions::Region::Jp,
+    ] {
+        if let Some(runtime) = runtimes.iter().find(|r| {
+            moenotes_server::regions::Region::from_session(&r.config.session.region) == Some(region)
+                && (region != moenotes_server::regions::Region::Jp
+                    || r.config.session.origin.trim_end_matches('/')
+                        == "https://api.bang-dream-on.jp")
+        }) {
+            regions.enable_profile_images(runtime.client.clone(), stop.clone())?;
+        }
     }
     if command == "auth-status" {
         let region_status: std::collections::BTreeMap<_, _> = default_region.into_iter()

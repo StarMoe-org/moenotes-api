@@ -226,7 +226,12 @@ async fn diagnose(State(state): State<ApiState>, request: Request, next: Next) -
         .find(|(path, _)| *path == request.uri().path())
         .map(|(_, name)| *name)
         .or_else(|| matched.and_then(path_routes::method_for_path))
-        .or_else(|| (matched == Some(profile_images::ROUTE)).then_some("profile-card-image"))
+        .or_else(|| {
+            profile_images::ROUTES
+                .iter()
+                .any(|(path, _)| matched == Some(*path))
+                .then_some("profile-card-image")
+        })
         .unwrap_or("support_or_unknown");
     let mut response = next.run(request).await;
     let status = response.status();

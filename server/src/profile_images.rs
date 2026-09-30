@@ -1,4 +1,4 @@
-//! JP profile-card PNG proxy. CDN secrets never enter JSON, logs or response headers.
+//! Regional profile-card PNG proxies. CDN secrets never enter public responses.
 use crate::{ApiState, HttpError, regions::Region};
 use async_trait::async_trait;
 use axum::{
@@ -28,6 +28,12 @@ use tonic::{
 use zeroize::Zeroizing;
 
 pub(crate) const ROUTE: &str = "/v1/jp/profile/{profileId}/card/{page}";
+pub(crate) const ROUTES: &[(&str, Region)] = &[
+    ("/v1/tw/profile/{profileId}/card/{page}", Region::Tw),
+    ("/v1/en/profile/{profileId}/card/{page}", Region::En),
+    ("/v1/kr/profile/{profileId}/card/{page}", Region::Kr),
+    (ROUTE, Region::Jp),
+];
 const API_ORIGIN: &str = "https://api.bang-dream-on.jp";
 const CDN_ORIGIN: &str = "https://static.bang-dream-on.jp";
 const MAX_IMAGE: usize = 8 * 1024 * 1024;
@@ -43,14 +49,19 @@ fn error(status: StatusCode, kind: &'static str) -> Response {
     (status, Json(serde_json::json!({"error":{"kind":kind}}))).into_response()
 }
 
-pub(crate) fn install(router: Router<ApiState>) -> Router<ApiState> {
-    router.route(
-        ROUTE,
-        get(handle).head(|| async { (StatusCode::METHOD_NOT_ALLOWED, [("allow", "GET")]) }),
-    )
+pub(crate) fn install(mut router: Router<ApiState>) -> Router<ApiState> {
+    for &(route, region) in ROUTES {
+        router = router.route(
+            route,
+            get(move |state, params, query, body| handle(region, state, params, query, body))
+                .head(|| async { (StatusCode::METHOD_NOT_ALLOWED, [("allow", "GET")]) }),
+        );
+    }
+    router
 }
 
 async fn handle(
+    region: Region,
     State(state): State<ApiState>,
     params: Result<Path<(String, String)>, axum::extract::rejection::PathRejection>,
     RawQuery(raw): RawQuery,
@@ -66,6 +77,8 @@ async fn handle(
             && s.parse::<i64>().is_ok_and(|n| n > 0)
     };
     if !positive(&id)
+        || (region != Region::Jp
+            && !Region::from_profile_id(&id).is_ok_and(|(selected, _)| selected == region))
         || !positive(&page)
         || raw.is_some_and(|q| !q.is_empty())
         || !matches!(body, Ok(ref b) if b.is_empty())
@@ -74,10 +87,10 @@ async fn handle(
     }
     let id = id.parse::<i64>().unwrap();
     let page = page.parse::<u64>().unwrap();
-    let Some(pool) = state.profiles.cache(Region::Jp) else {
+    let Some(pool) = state.profiles.cache(region) else {
         return error(StatusCode::SERVICE_UNAVAILABLE, "region_unconfigured");
     };
-    let Some(images) = state.profiles.profile_images() else {
+    let Some(images) = state.profiles.profile_images(region) else {
         return error(StatusCode::SERVICE_UNAVAILABLE, "image_proxy_unconfigured");
     };
     let work = async {
@@ -96,15 +109,16 @@ async fn handle(
         let Some(url) = url else {
             return Ok(error(StatusCode::NOT_FOUND, "profile_card_not_found"));
         };
-        validate_url(url, id)?;
+        validate_url(url, id, region)?;
         let (bytes, status) = images.get(url).await?;
         Ok::<_, ClientError>(
             (
                 [
                     ("content-type", "image/png"),
                     ("x-content-type-options", "nosniff"),
-                    ("x-moenotes-region", "jp"),
+                    ("x-moenotes-region", region.as_str()),
                     ("x-moenotes-cache", status),
+                    ("x-moenotes-card-file", url.rsplit('/').next().unwrap()),
                 ],
                 bytes,
             )
@@ -122,10 +136,55 @@ async fn handle(
 }
 
 // Check the raw spelling too: URL parsing normalizes dot segments and backslashes.
-fn validate_url(value: &str, id: i64) -> Result<(), ClientError> {
-    let prefix = format!("{CDN_ORIGIN}/operation/profilecard/{id}/");
-    let Some(file) = value.strip_prefix(&prefix) else {
-        return Err(err(ErrorKind::Protocol));
+fn validate_url(value: &str, id: i64, region: Region) -> Result<(), ClientError> {
+    let file = if region == Region::Jp {
+        let prefix = format!("{CDN_ORIGIN}/operation/profilecard/{id}/");
+        value
+            .strip_prefix(&prefix)
+            .ok_or_else(|| err(ErrorKind::Protocol))?
+    } else {
+        let url = url::Url::parse(value).map_err(|_| err(ErrorKind::Protocol))?;
+        let host = url.host_str().ok_or_else(|| err(ErrorKind::Protocol))?;
+        let allowed: &[&str] = match region {
+            Region::Tw => &["gamerfusiontech.com"],
+            Region::En => &["bilibiligame.net"],
+            Region::Kr => &["gamerfusiontech.com", "bilibiligame.net"],
+            Region::Jp => unreachable!(),
+        };
+        if url.scheme() != "https"
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.port().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || !allowed
+                .iter()
+                .any(|domain| host == *domain || host.ends_with(&format!(".{domain}")))
+        {
+            return Err(err(ErrorKind::Protocol));
+        }
+        // Match the raw URL to reject normalized dot segments, escaped paths and explicit ports.
+        let prefix = format!("https://{host}/prod/");
+        let rest = value
+            .strip_prefix(&prefix)
+            .ok_or_else(|| err(ErrorKind::Protocol))?;
+        let (release, rest) = rest
+            .split_once('/')
+            .ok_or_else(|| err(ErrorKind::Protocol))?;
+        let (locale, hash) = release
+            .split_once('_')
+            .ok_or_else(|| err(ErrorKind::Protocol))?;
+        if locale.is_empty()
+            || !locale.bytes().all(|b| b.is_ascii_lowercase())
+            || hash.len() != 32
+            || !hash
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(err(ErrorKind::Protocol));
+        }
+        rest.strip_prefix(&format!("operation/profilecard/{id}/"))
+            .ok_or_else(|| err(ErrorKind::Protocol))?
     };
     if file.is_empty()
         || file.len() > 512
@@ -174,7 +233,14 @@ impl ProfileImages {
         client: Arc<Client>,
         stop: CancellationToken,
     ) -> Result<Arc<Self>, ClientError> {
-        Ok(Self::with_source(Arc::new(LiveSource::new(client)?), stop))
+        let source: Arc<dyn ImageSource> = if client.session_config().region == "jp" {
+            Arc::new(LiveSource::new(client)?)
+        } else {
+            Arc::new(DirectSource {
+                http: image_http_client()?,
+            })
+        };
+        Ok(Self::with_source(source, stop))
     }
     fn with_source(source: Arc<dyn ImageSource>, stop: CancellationToken) -> Arc<Self> {
         Arc::new(Self {
@@ -230,6 +296,54 @@ impl ProfileImages {
     }
 }
 
+fn image_http_client() -> Result<reqwest::Client, ClientError> {
+    reqwest::Client::builder()
+        .https_only(true)
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|_| err(ErrorKind::InvalidConfig))
+}
+
+struct DirectSource {
+    http: reqwest::Client,
+}
+#[async_trait]
+impl ImageSource for DirectSource {
+    async fn fetch(&self, url: &str) -> Result<Bytes, ClientError> {
+        // International CDN downloads never receive gateway, game or JP CDN credentials.
+        read_image_response(self.http.get(url).send().await.map_err(http_error)?).await
+    }
+}
+
+async fn read_image_response(mut response: reqwest::Response) -> Result<Bytes, ClientError> {
+    if response.status() != StatusCode::OK {
+        return Err(err(ErrorKind::Transport));
+    }
+    if response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap().trim())
+        != Some("image/png")
+        || response
+            .content_length()
+            .is_some_and(|n| n > MAX_IMAGE as u64)
+    {
+        return Err(err(ErrorKind::Protocol));
+    }
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(http_error)? {
+        if bytes.len() + chunk.len() > MAX_IMAGE {
+            return Err(err(ErrorKind::Protocol));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(Bytes::from(bytes))
+}
+
 struct Credential {
     authorization: Zeroizing<String>,
     version: String,
@@ -260,14 +374,7 @@ impl LiveSource {
             .map_err(|_| err(ErrorKind::InvalidConfig))?
             .connect_timeout(Duration::from_secs(5))
             .connect_lazy();
-        let http = reqwest::Client::builder()
-            .https_only(true)
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|_| err(ErrorKind::InvalidConfig))?;
+        let http = image_http_client()?;
         Ok(Self {
             client,
             http,
@@ -411,7 +518,7 @@ impl ImageSource for LiveSource {
             let mut header = HeaderValue::from_str(&credential.authorization)
                 .map_err(|_| err(ErrorKind::Protocol))?;
             header.set_sensitive(true);
-            let mut response = self
+            let response = self
                 .http
                 .get(url)
                 .header("authorization", header)
@@ -427,29 +534,7 @@ impl ImageSource for LiveSource {
                 credential = self.credential(Some(&credential)).await?;
                 continue;
             }
-            if response.status() != StatusCode::OK {
-                return Err(err(ErrorKind::Transport));
-            }
-            if response
-                .headers()
-                .get("content-type")
-                .and_then(|v| v.to_str().ok())
-                .map(|v| v.split(';').next().unwrap().trim())
-                != Some("image/png")
-                || response
-                    .content_length()
-                    .is_some_and(|n| n > MAX_IMAGE as u64)
-            {
-                return Err(err(ErrorKind::Protocol));
-            }
-            let mut bytes = Vec::new();
-            while let Some(chunk) = response.chunk().await.map_err(http_error)? {
-                if bytes.len() + chunk.len() > MAX_IMAGE {
-                    return Err(err(ErrorKind::Protocol));
-                }
-                bytes.extend_from_slice(&chunk);
-            }
-            return Ok(Bytes::from(bytes));
+            return read_image_response(response).await;
         }
         Err(err(ErrorKind::Transport))
     }

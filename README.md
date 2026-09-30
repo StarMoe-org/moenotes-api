@@ -9,7 +9,7 @@ SDK password inputs use `accounts/international/`. Explicit JP query routes,
 one-shot operator registration and migration instructions are documented in
 [JP accounts](docs/jp-accounts.md). The HTTP service never registers JP accounts.
 
-JP custom profile-card PNGs can be fetched through the authenticated
+TW/EN/KR/JP custom profile-card PNGs can be fetched through the authenticated
 [profile image proxy](docs/profile-card-images.md), without exposing CDN credentials.
 
 **Experimental, with limited authorized live validation.** SDK password login,

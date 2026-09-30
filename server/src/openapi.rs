@@ -138,22 +138,31 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
             paths.insert(path, operation);
         }
     }
-    paths.insert(crate::profile_images::ROUTE.into(), json!({"get": {
-        "operationId":"jp-profile-card-image", "tags":["read queries"],
-        "description":"JP custom profile-card page as PNG. Page is 1-based in thumbnailUrl order. No request body or query parameters. Server-side CDN authentication; existing profile JSON is unchanged.",
-        "security":[{"apiKey":[]}],
-        "parameters":[
-            {"name":"profileId","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9]+$"},"description":"Positive int64 JP profile ID."},
-            {"name":"page","in":"path","required":true,"schema":{"type":"integer","minimum":1},"description":"1-based page index."}
-        ],
-        "responses":{
-            "200":{"description":"PNG, at most 8 MiB. Cache-Control: no-store; internal image cache keyed by the full upstream URL.","content":{"image/png":{"schema":{"type":"string","format":"binary"}}}},
-            "400":{"description":"Invalid ID, page, query or body"},"401":{"description":"Missing or invalid API key"},
-            "404":{"description":"Profile/card/page missing or route disabled"},"405":{"description":"GET only"},
-            "429":{"description":"Local admission/download limit"},"502":{"description":"Invalid upstream image or CDN failure"},
-            "503":{"description":"JP/proxy unconfigured or upstream session unavailable"},"504":{"description":"Request deadline exceeded"}
-        }
-    }}));
+    for &(path, region) in crate::profile_images::ROUTES {
+        paths.insert(path.into(), json!({"get": {
+            "operationId":format!("{}-profile-card-image", region.as_str()), "tags":["read queries"],
+            "description":"Custom profile-card page as PNG for the explicit region. Page is 1-based in thumbnailUrl order. No request body or query parameters. CDN downloading belongs to this gateway; existing profile JSON is unchanged.",
+            "security":[{"apiKey":[]}],
+            "parameters":[
+                {"name":"profileId","in":"path","required":true,"schema":{"type":"string","pattern":match region {
+                    crate::regions::Region::Tw => "^2[0-9]{10}$", crate::regions::Region::En => "^3[0-9]{10}$",
+                    crate::regions::Region::Kr => "^4[0-9]{10}$", crate::regions::Region::Jp => "^[0-9]+$"
+                }},"description":"Positive int64 profile ID belonging to the selected region."},
+                {"name":"page","in":"path","required":true,"schema":{"type":"integer","minimum":1},"description":"1-based page index; empty entries retain their indices."}
+            ],
+            "responses":{
+                "200":{"description":"PNG, at most 8 MiB. Cache-Control: no-store; internal image cache keyed by the full upstream URL.",
+                    "headers":{
+                        "X-Moenotes-Region":{"schema":{"type":"string","enum":[region.as_str()]}},
+                        "X-Moenotes-Card-File":{"description":"File name of the actual current image, allowing downstream caches to detect stale profile snapshots.","schema":{"type":"string"}}
+                    },"content":{"image/png":{"schema":{"type":"string","format":"binary"}}}},
+                "400":{"description":"Invalid ID, region mismatch, page, query or body"},"401":{"description":"Missing or invalid API key"},
+                "404":{"description":"Card/page missing or route disabled"},"405":{"description":"GET only"},
+                "429":{"description":"Local admission/download limit"},"502":{"description":"Profile business error, invalid upstream image or CDN failure"},
+                "503":{"description":"Region/proxy unconfigured or upstream session unavailable"},"504":{"description":"Request deadline exceeded"}
+            }
+        }}));
+    }
     json!({"openapi":"3.1.0","info":{"title":"moenotes-api","version":env!("CARGO_PKG_VERSION"),"description":"Experimental GET query gateway with limited live validation. Not an official or stable API."},
         "paths":paths,"components":{"securitySchemes":{"apiKey":{"type":"http","scheme":"bearer"}},"schemas":schemas}})
 }

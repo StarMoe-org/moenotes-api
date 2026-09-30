@@ -4,6 +4,12 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+- Add authenticated TW/EN/KR profile-card PNG routes alongside the unchanged JP
+  route: `/v1/{region}/profile/{profileId}/card/{page}`. Keep profile/session and
+  image caches region-isolated; international downloads use no CDN credentials.
+- Return `X-Moenotes-Card-File` for downstream immutable-cache identity checks.
+  Document website integration through starmoe-api instead of the ranking service.
+
 ## 0.1.0-alpha.10 - 2026-09-30
 
 - Add authenticated `GET /v1/jp/profile/{profileId}/card/{page}` for 1-based JP

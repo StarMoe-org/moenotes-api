@@ -44,7 +44,9 @@ claimed. Use only accounts and upstream services you are authorized to access.
   share the gateway bearer key and response policy; callers holding that key can
   reach any configured region. Use separate gateway instances for separate callers.
 
-The JP profile-card proxy obtains a separate CDN credential from anonymous Version
+The regional profile-card proxies keep downloads and image caches separate by region.
+International image requests carry no gateway or game credentials. The JP proxy
+obtains a separate CDN credential from anonymous Version
 metadata. It remains in process memory and is not included in query JSON, logs or
 client response headers. Image URLs are profile-bound and restricted to the official
 CDN; redirects are rejected. Image bytes are bounded and PNG-framed but not fully

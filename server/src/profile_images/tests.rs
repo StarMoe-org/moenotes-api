@@ -39,6 +39,7 @@ impl ImageSource for Source {
     }
 }
 struct Profile {
+    region: Region,
     generation: Generation,
     json: RwLock<serde_json::Value>,
     calls: AtomicUsize,
@@ -60,7 +61,7 @@ impl QueryClient for Profile {
             generation,
             fetched_at: SystemTime::now(),
             message: DynamicMessage::deserialize(
-                moenotes_proto::pool_for_region("jp")
+                moenotes_proto::pool_for_region(self.region.as_str())
                     .get_message_by_name(query.method().output)
                     .unwrap(),
                 self.json.read().unwrap().clone(),
@@ -86,7 +87,7 @@ fn app(profile: Arc<Profile>, images: Arc<ProfileImages>, mode: ResponseMode) ->
         stop.clone(),
     )
     .unwrap();
-    regions.set_profile_images(images);
+    regions.set_profile_images(Region::Jp, images);
     crate::router_with_regions(
         profile,
         Zeroizing::new(KEY.into()),
@@ -103,6 +104,7 @@ fn app(profile: Arc<Profile>, images: Arc<ProfileImages>, mode: ResponseMode) ->
 }
 fn profile() -> Arc<Profile> {
     Arc::new(Profile {
+        region: Region::Jp,
         generation: Generation::new_v4(),
         json: RwLock::new(
             serde_json::json!({"playerProfile":{"profileId":ID.to_string(),"profileCard":{"thumbnailUrl":[url(1),"",url(3)]}}}),
@@ -120,7 +122,7 @@ fn request(path: &str, method: &str, auth: bool, body: &str) -> HttpRequest<Body
 
 #[test]
 fn urls_are_exact_profile_bound_and_png_is_bounded() {
-    assert!(validate_url(&url(1), ID).is_ok());
+    assert!(validate_url(&url(1), ID, Region::Jp).is_ok());
     for bad in [
         url(1).replace("https:", "http:"),
         url(1).replace("static.", "evil."),
@@ -134,7 +136,7 @@ fn urls_are_exact_profile_bound_and_png_is_bounded() {
         url(1).replace(".jp/", ".jp.evil/"),
         url(1).replace(".jp/", ".jp@evil/"),
     ] {
-        assert!(validate_url(&bad, ID).is_err(), "{bad}");
+        assert!(validate_url(&bad, ID, Region::Jp).is_err(), "{bad}");
     }
     assert!(png(&image()));
     assert!(!png(b"<html>not an image</html>"));
@@ -194,6 +196,10 @@ async fn auth_pages_changed_urls_disabled_and_errors() {
         assert_eq!(r.headers()["x-content-type-options"], "nosniff");
         assert_eq!(r.headers()["cache-control"], "no-store");
         assert_eq!(r.headers()["x-moenotes-cache"], status);
+        assert_eq!(
+            r.headers()["x-moenotes-card-file"],
+            format!("{ID}_1_1_synthetic")
+        );
         assert!(!r.headers().contains_key("authorization"));
         assert_eq!(r.into_body().collect().await.unwrap().to_bytes(), image());
     }
@@ -502,5 +508,248 @@ async fn credential_expiry_and_concurrent_rejection_share_refresh() {
     }
     source.credential(None).await.unwrap();
     assert_eq!(wire.versions.load(Ordering::SeqCst), 3);
+    server.abort();
+}
+
+fn regional_url(region: Region, id: i64) -> String {
+    let hash = "a".repeat(64);
+    let host = match region {
+        Region::Tw => "l14-prod-hk-patch-sirius.gamerfusiontech.com",
+        Region::En => "l14-prod-en-patch-sirius.bilibiligame.net",
+        Region::Kr => "l14-prod-kr-patch-sirius.bilibiligame.net",
+        Region::Jp => return format!("{CDN_ORIGIN}/operation/profilecard/{id}/{id}_1_1_{hash}"),
+    };
+    format!(
+        "https://{host}/prod/{}_0123456789abcdef0123456789abcdef/operation/profilecard/{id}/{id}_1_1_{hash}",
+        region.as_str()
+    )
+}
+
+#[test]
+fn international_urls_are_region_and_player_bound_before_download() {
+    for (region, id) in [
+        (Region::Tw, 20000000001),
+        (Region::En, 30000000001),
+        (Region::Kr, 40000000001),
+    ] {
+        let good = regional_url(region, id);
+        assert!(validate_url(&good, id, region).is_ok());
+        assert!(validate_url(&good, id + 1, region).is_err());
+        assert!(validate_url(&good, id, Region::Jp).is_err());
+        let host = url::Url::parse(&good)
+            .unwrap()
+            .host_str()
+            .unwrap()
+            .to_owned();
+        for bad in [
+            good.replace("https:", "http:"),
+            good.replace(&host, &format!("{host}.invalid")),
+            good.replace(&host, &format!("{host}@evil.invalid")),
+            good.replace(&host, &format!("{host}:443")),
+            good.replace("/prod/", "/x/../prod/"),
+            good.replace("/prod/", "/%70rod/"),
+            good.replace("/prod/", "/prod\\"),
+            good.replace("0123456789abcdef0123456789abcdef", "short"),
+            good.replace(&"a".repeat(64), "/../other"),
+            format!("{good}?key=unexpected"),
+            format!("{good}#fragment"),
+        ] {
+            assert!(validate_url(&bad, id, region).is_err(), "{bad}");
+        }
+    }
+    assert!(
+        validate_url(
+            &regional_url(Region::Tw, 20000000001),
+            20000000001,
+            Region::En
+        )
+        .is_err()
+    );
+}
+
+#[tokio::test]
+async fn four_regions_keep_profiles_images_and_response_headers_isolated() {
+    let stop = CancellationToken::new();
+    let options = CacheOptions {
+        ttl: Duration::ZERO,
+        ..Default::default()
+    };
+    let entries = [
+        (Region::Tw, 20000000001),
+        (Region::En, 30000000001),
+        (Region::Kr, 40000000001),
+        (Region::Jp, ID),
+    ];
+    let profiles: Vec<_> = entries.iter().map(|&(region, id)| Arc::new(Profile {
+        region,
+        generation: Generation::new_v4(),
+        json: RwLock::new(serde_json::json!({"playerProfile":{"profileId":id.to_string(),"profileCard":{"thumbnailUrl":[regional_url(region, id), ""]}}})),
+        calls: AtomicUsize::new(0),
+    })).collect();
+    let mut regions = RegionClients::new(
+        Some(Region::Tw),
+        profiles
+            .iter()
+            .map(|profile| RegionBackend {
+                region: profile.region,
+                client: profile.clone(),
+                managed: None,
+            })
+            .collect(),
+        options.clone(),
+        stop.clone(),
+    )
+    .unwrap();
+    let mut sources = Vec::new();
+    for &(region, _) in &entries {
+        let source = Arc::new(Source {
+            calls: AtomicUsize::new(0),
+            body: image(),
+        });
+        regions.set_profile_images(
+            region,
+            ProfileImages::with_source(source.clone(), stop.clone()),
+        );
+        sources.push(source);
+    }
+    let app = crate::router_with_regions(
+        profiles[0].clone(),
+        Zeroizing::new(KEY.into()),
+        crate::RouterOptions {
+            mode: ResponseMode::Public,
+            managed: None,
+            access_log: false,
+        },
+        options,
+        stop,
+        regions,
+    )
+    .unwrap();
+    for (index, &(region, id)) in entries.iter().enumerate() {
+        let path = format!("/v1/{}/profile/{id}/card/1", region.as_str());
+        for status in ["MISS", "HIT"] {
+            let response = app
+                .clone()
+                .oneshot(request(&path, "GET", true, ""))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(response.headers()["x-moenotes-region"], region.as_str());
+            assert_eq!(response.headers()["x-moenotes-cache"], status);
+            assert_eq!(
+                response.headers()["x-moenotes-card-file"],
+                format!("{id}_1_1_{}", "a".repeat(64))
+            );
+            assert_eq!(
+                response.into_body().collect().await.unwrap().to_bytes(),
+                image()
+            );
+        }
+        assert_eq!(sources[index].calls.load(Ordering::SeqCst), 1);
+        for later in sources.iter().skip(index + 1) {
+            assert_eq!(later.calls.load(Ordering::SeqCst), 0);
+        }
+        let response = app
+            .clone()
+            .oneshot(request(
+                &path.replace("/card/1", "/card/2"),
+                "GET",
+                true,
+                "",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+    for path in [
+        "/v1/tw/profile/30000000001/card/1",
+        "/v1/en/profile/40000000001/card/1",
+        "/v1/kr/profile/20000000001/card/1",
+    ] {
+        assert_eq!(
+            app.clone()
+                .oneshot(request(path, "GET", true, ""))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        app.oneshot(request(
+            "/v1/tw/profile/20000000001/card/1",
+            "GET",
+            false,
+            ""
+        ))
+        .await
+        .unwrap()
+        .status(),
+        StatusCode::UNAUTHORIZED
+    );
+}
+
+#[tokio::test]
+async fn international_downloads_have_no_credentials_or_redirect_retries() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let handler_calls = calls.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(
+        axum::serve(
+            listener,
+            Router::new().fallback(move |request: axum::extract::Request| {
+                let calls = handler_calls.clone();
+                async move {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    for header in [
+                        "authorization",
+                        "cookie",
+                        "x-player-id",
+                        "x-player-credential",
+                        "x-device-id",
+                    ] {
+                        assert!(request.headers().get(header).is_none());
+                    }
+                    match request.uri().path() {
+                        "/image" => ([("content-type", "image/png")], image()).into_response(),
+                        "/redirect" => {
+                            (StatusCode::FOUND, [("location", "/image")]).into_response()
+                        }
+                        "/large" => ([("content-type", "image/png")], vec![0u8; MAX_IMAGE + 1])
+                            .into_response(),
+                        "/bad" => ([("content-type", "text/html")], "private upstream error")
+                            .into_response(),
+                        _ => StatusCode::UNAUTHORIZED.into_response(),
+                    }
+                }
+            }),
+        )
+        .into_future(),
+    );
+    let source = DirectSource {
+        http: reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .unwrap(),
+    };
+    assert_eq!(
+        source
+            .fetch(&format!("http://{address}/image"))
+            .await
+            .unwrap(),
+        image()
+    );
+    for path in ["redirect", "large", "bad", "unauthorized"] {
+        let before = calls.load(Ordering::SeqCst);
+        assert!(
+            source
+                .fetch(&format!("http://{address}/{path}"))
+                .await
+                .is_err()
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), before + 1);
+    }
     server.abort();
 }
