@@ -4,6 +4,13 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
 ## Unreleased
 
+- Prefer each region's newer client version from
+  `https://metadata.bdon.moe/current_version.json` when opt-in client release
+  following receives `CLIENT_UPDATE_REQUIRED`. Validate the candidate with the
+  official anonymous Version RPC before atomically adopting it and its returned
+  data versions; retain bounded patch probing as a fallback. Share bounded,
+  credential-free metadata fetches across pool members and log the update source.
+
 ## 0.1.0-alpha.11 - 2026-09-30
 
 - Add authenticated TW/EN/KR profile-card PNG routes alongside the unchanged JP

@@ -219,7 +219,8 @@ Phases: unverified, ready, recovering, recovered, reauthentication_required,
 version_blocked, device_conflict, persistence_failed. The independent version
 poller clears an explicit master mismatch only after discovering a changed pair.
 Device blocks still require operator action, and so do client upgrades unless
-`[version_sync] follow_client_updates` adopts a patch release (see
+`[version_sync] follow_client_updates` validates an advertised metadata release
+or adopts a fallback patch release (see
 [configuration](configuration.md#following-client-releases)). `session.version_sync`
 reports checks, effective versions and failures; Version success does not establish
 authenticated readiness. Whoami is not used as the sole validity probe.

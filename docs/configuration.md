@@ -152,8 +152,8 @@ Clients may see a transient 503 around a version change and should retry normall
 
 Only an explicit `MASTER_VERSION_MISMATCH` is cleared by discovery of a changed
 pair. Required client upgrades need operator action unless the option below adopts
-a patch release. Rejected tokens and device conflicts are not cleared by version
-discovery. No failed business request is automatically replayed. Readiness
+an advertised or probed release. Rejected tokens and device conflicts are not
+cleared by version discovery. No failed business request is automatically replayed. Readiness
 is re-established by a successful authenticated query, not by Version success.
 See authenticated `/v1/status` → `session.version_sync` for effective versions,
 check/update counts, last check time and safe error category. Disable this section
@@ -169,10 +169,23 @@ follow_client_updates = true
 After a client release the game refuses the configured `client_version` (the
 Version call returns `CLIENT_UPDATE_REQUIRED`, categorized as `version`), and
 every query of that region fails until the configuration is updated. With
-`follow_client_updates = true` the poller then tries
-the next three patch releases of the configured `MAJOR.MINOR.PATCH` version in
-order (`1.0.3` → `1.0.4`, `1.0.5`, `1.0.6`), each with the same anonymous Version
-call: no account, SDK token or login is involved.
+`follow_client_updates = true` the poller first reads
+`https://metadata.bdon.moe/current_version.json` and selects that region's newer
+`client_version`. TW/HK/MO (`hk`, `tw`, `hk-tw-mo`) maps to `regions.hk-tw-mo`;
+EN, KR and JP map to their respective keys. The candidate is validated with the
+same anonymous Version call: no account, SDK token or login is involved.
+
+The metadata request is HTTPS-only, sends no credentials, disables redirects and
+proxies, has a five-second timeout and accepts at most 64 KiB of schema-version-1
+JSON. A process-wide 60-second cache shares successful and failed fetches across
+all regions and pool members. Missing, malformed, equal or older candidates are
+ignored. Only `client_version` is used: metadata master/resource values, URLs and
+endpoints never replace game-returned versions or configured origins.
+
+If metadata is unavailable or unusable, or its candidate is explicitly rejected
+with `CLIENT_UPDATE_REQUIRED`, the poller falls back to the next three patch
+releases in order (`1.0.3` → `1.0.4`, `1.0.5`, `1.0.6`). A metadata candidate
+already tried is not probed twice in the same check.
 
 - A candidate also rejected with `CLIENT_UPDATE_REQUIRED` moves on to the next one.
   `MASTER_VERSION_MISMATCH` shares the `version` error category but never starts or
@@ -183,14 +196,17 @@ call: no account, SDK token or login is involved.
 - Any other answer stops the search until the next check. During a rollout the new
   release is typically announced with maintenance while the old one is already
   refused; the poller keeps the old version and retries every interval.
-- Minor and major releases (`1.0.x` → `1.1.0`) are never guessed and still need an
-  operator. Neither is a version whose format is not `MAJOR.MINOR.PATCH`.
+- Metadata can advertise a newer minor or major release (`1.0.x` → `1.1.0`),
+  which is adopted only after the game accepts it. Minor and major releases are
+  never guessed by the fallback. Versions not in `MAJOR.MINOR.PATCH` format
+  still require operator action.
 
 The adopted version is kept in memory only; `config.toml` is not rewritten, so a
 restart starts from the configured value and follows again on its first check.
 Update `client_version` in the file to make it permanent. `version_sync` in
 `/v1/status` shows the presented `client_version` and a `client_updates` count, and
-each followed release logs a `client_version_update` event with both versions.
+each followed release logs a `client_version_update` event with both versions
+and `source` (`metadata` or `patch_probe`).
 
 If an initialization/recovery worker was explicitly rejected with
 `CLIENT_UPDATE_REQUIRED`, adopting a release rearms that attempt for the next

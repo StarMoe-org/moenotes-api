@@ -145,8 +145,10 @@ Fully configured servers now discover master/resource versions anonymously at
 startup and every 60 seconds. Existing account sessions are preserved, and the
 effective versions are visible in `/v1/status`. This does not log in or renew SDK
 credentials. Set `[version_sync] enabled=false` to disable discovery. Opt-in
-`follow_client_updates = true` also adopts the next patch client release (e.g.
-`1.0.3` → `1.0.4`) once the game refuses the configured one; see
+`follow_client_updates = true` also reads the regional client version from
+`https://metadata.bdon.moe/current_version.json` once the game refuses the
+configured one, validates it with the anonymous Version call, and falls back to
+the next three patch releases if metadata is unavailable; see
 [following client releases](docs/configuration.md#following-client-releases).
 
 Since `0.1.0-alpha.4`, one `config.toml` holds the HTTP key, game session,

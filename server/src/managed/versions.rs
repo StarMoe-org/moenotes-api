@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::VersionSyncConfig;
 use std::time::{SystemTime, UNIX_EPOCH};
+mod metadata;
 
 /// Patch releases tried per check once the game refuses the client version.
 const CLIENT_CANDIDATES: u32 = 3;
@@ -50,6 +51,16 @@ impl ManagedClient {
     }
 
     async fn sync_versions(&self, client: &Client, follow_client_updates: bool) {
+        self.sync_versions_with_metadata(client, follow_client_updates, metadata::shared())
+            .await;
+    }
+
+    async fn sync_versions_with_metadata(
+        &self,
+        client: &Client,
+        follow_client_updates: bool,
+        metadata: &metadata::MetadataSource,
+    ) {
         {
             let mut state = self.state.lock().unwrap();
             if state.version_updating
@@ -63,13 +74,20 @@ impl ManagedClient {
         let mut result = client
             .refresh_versions(generation, self.stop.child_token())
             .await;
-        // The game refuses the client version after a client release. Try the next
-        // patch releases in order; one that is refused as well moves on, anything else
-        // (e.g. maintenance while the release rolls out) waits for the next check.
         let mut followed = None;
         if follow_client_updates && matches!(&result, Err(error) if client_update_required(error)) {
-            let previous = client.session_config().client_version;
+            let session = client.session_config();
+            let previous = session.client_version;
+            let advertised = metadata
+                .candidate(&session.region, &previous, self.stop.child_token())
+                .await;
+            let mut candidates: Vec<_> = advertised.iter().cloned().collect();
             for candidate in moenotes_client::patch_successors(&previous, CLIENT_CANDIDATES) {
+                if !candidates.contains(&candidate) {
+                    candidates.push(candidate);
+                }
+            }
+            for candidate in candidates {
                 match client
                     .adopt_client_version(generation, &candidate, self.stop.child_token())
                     .await
@@ -77,7 +95,12 @@ impl ManagedClient {
                     Err(error) if client_update_required(&error) => continue,
                     outcome => {
                         if outcome.is_ok() {
-                            followed = Some((previous.clone(), candidate));
+                            let source = if advertised.as_deref() == Some(candidate.as_str()) {
+                                "metadata"
+                            } else {
+                                "patch_probe"
+                            };
+                            followed = Some((previous.clone(), candidate, source));
                         }
                         result = outcome;
                         break;
@@ -130,11 +153,11 @@ impl ManagedClient {
         );
         status.last_error = result.as_ref().err().map(|e| e.kind);
         status.client_version = client.session_config().client_version;
-        if let Some((from, to)) = &followed {
+        if let Some((from, to, source)) = &followed {
             status.client_updates += 1;
             eprintln!(
                 "{}",
-                serde_json::json!({"event":"client_version_update","from":from,"to":to})
+                serde_json::json!({"event":"client_version_update","from":from,"to":to,"source":source})
             );
         }
         if result.is_ok() {
@@ -378,8 +401,15 @@ mod tests {
         .unwrap()
     }
     fn release(configured: &str, live: &str) -> (Arc<Client>, Arc<ManagedClient>, Arc<Release>) {
+        release_in_region(configured, live, "test")
+    }
+    fn release_in_region(
+        configured: &str,
+        live: &str,
+        region: &str,
+    ) -> (Arc<Client>, Arc<ManagedClient>, Arc<Release>) {
         let config = SessionConfig {
-            region: "test".into(),
+            region: region.into(),
             origin: "https://game.invalid".into(),
             allowed_origins: vec!["https://game.invalid".into()],
             platform: "android".into(),
@@ -443,6 +473,96 @@ mod tests {
         managed.sync_versions(&client, true).await;
         assert_eq!(*mock.seen.lock().unwrap(), ["1.0.5"]);
         assert_eq!(managed.status().version_sync.unwrap().client_updates, 1);
+    }
+
+    #[tokio::test]
+    async fn metadata_follows_advertised_patch_minor_and_major_releases() {
+        for live in ["1.0.9", "1.1.0", "2.0.0"] {
+            let fixture = metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{
+                "en":{"client_version":live,"version":"untrusted-master","resource_version":"untrusted-resource"}
+            }})).await;
+            let (client, managed, mock) = release_in_region("1.0.3", live, "en");
+            let generation = client.generation();
+            managed
+                .sync_versions_with_metadata(&client, true, &fixture.source)
+                .await;
+            let config = client.session_config();
+            assert_eq!(config.client_version, live);
+            assert_eq!(config.master_version, Some(format!("master-{live}")));
+            assert_eq!(config.resource_version.as_deref(), Some("1.0.0.105"));
+            assert_ne!(client.generation(), generation);
+            assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", live]);
+            assert_eq!(*mock.protected_calls.lock().unwrap(), 0);
+            assert_eq!(managed.status().version_sync.unwrap().client_updates, 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn rejected_metadata_candidates_fall_back_without_duplicate_probes() {
+        let fixture = metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{
+            "en":{"client_version":"1.0.4"}
+        }}))
+        .await;
+        let (client, managed, mock) = release_in_region("1.0.3", "1.0.5", "en");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", "1.0.4", "1.0.5"]);
+        assert_eq!(client.session_config().client_version, "1.0.5");
+    }
+
+    #[tokio::test]
+    async fn metadata_maintenance_preserves_the_session_and_stops_the_search() {
+        let fixture = metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{
+            "en":{"client_version":"1.1.0"}
+        }}))
+        .await;
+        let (client, managed, mock) = release_in_region("1.0.3", "1.1.0", "en");
+        *mock.maintenance.lock().unwrap() = true;
+        let generation = client.generation();
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", "1.1.0"]);
+        assert_eq!(client.generation(), generation);
+        assert_eq!(client.session_config().client_version, "1.0.3");
+        assert_eq!(
+            managed.status().version_sync.unwrap().last_error,
+            Some(ErrorKind::Maintenance)
+        );
+    }
+
+    #[tokio::test]
+    async fn metadata_is_not_requested_without_an_explicit_client_update_and_opt_in() {
+        let fixture = metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{
+            "en":{"client_version":"1.0.5"}
+        }}))
+        .await;
+        for (live, enabled, code) in [
+            ("1.0.3", true, "CLIENT_UPDATE_REQUIRED"),
+            ("1.0.4", false, "CLIENT_UPDATE_REQUIRED"),
+            ("1.0.4", true, "MASTER_VERSION_MISMATCH"),
+        ] {
+            let (client, managed, mock) = release_in_region("1.0.3", live, "en");
+            *mock.rejection.lock().unwrap() = version_error(code);
+            managed
+                .sync_versions_with_metadata(&client, enabled, &fixture.source)
+                .await;
+            assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3"]);
+        }
+        assert_eq!(fixture.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn unavailable_metadata_preserves_the_existing_patch_fallback() {
+        let fixture = metadata::tests::fixture(serde_json::json!({})).await;
+        *fixture.response.lock().unwrap() = (reqwest::StatusCode::SERVICE_UNAVAILABLE, "{}".into());
+        let (client, managed, mock) = release_in_region("1.0.3", "1.0.5", "en");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", "1.0.4", "1.0.5"]);
+        assert_eq!(client.session_config().client_version, "1.0.5");
     }
     #[tokio::test]
     async fn waits_out_release_maintenance_and_stays_put_when_off() {
