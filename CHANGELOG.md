@@ -2,7 +2,7 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
-## Unreleased
+## 0.1.0-alpha.13 - 2026-10-28
 
 - Refresh the bundled protocol snapshot to the Android 1.1.0 sample: 125 files,
   57 services and 276 unary methods. Keep the 1.0.1 `PlayerService/Whoami` and
