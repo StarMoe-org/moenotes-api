@@ -9,7 +9,7 @@ mod session;
 pub mod transport;
 mod versions;
 
-pub use versions::{DataVersions, patch_successors};
+pub use versions::{DataVersions, is_newer_release, normalize_release, patch_successors};
 
 pub use error::{ClientError, ErrorKind};
 pub use moenotes_proto::generated;

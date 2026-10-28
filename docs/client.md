@@ -91,7 +91,10 @@ retaining credentials and invalidating the old generation. It clears only an
 explicit master mismatch when versions change. `adopt_client_version` presents an
 explicit candidate with the same anonymous RPC; on success it installs the client
 and data versions together and can clear a client-upgrade block. Authentication
-and device blocks remain. Server-side automatic adoption is opt-in; see
+and device blocks remain. `ClientError::recommended_client_version` exposes the
+untrusted `x-client-recommended-version` value when the game names one, so callers
+can present it before guessing patch releases. Server-side automatic adoption is
+opt-in; see
 [following client releases](configuration.md#following-client-releases). Explicit
 SDK login can recover an authentication rejection, but cannot bypass a
 version/device block.

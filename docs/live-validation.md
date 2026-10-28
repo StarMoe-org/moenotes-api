@@ -43,8 +43,8 @@ answered `maintenance`; after the maintenance, 1.0.4 was accepted with
 `x-asset-version` present. The deployed gateway, still configured with 1.0.3,
 reported `version` from its version poll and its JP queries. This is the rollout
 behavior `follow_client_updates` relies on: a refused version moves to the next
-patch, and maintenance waits. The option itself was verified with offline tests,
-not yet by a deployed rollout.
+candidate (named release, metadata, then patch), and maintenance waits. The option
+itself was verified with offline tests, not yet by a deployed rollout.
 
 ## Authentication and Persistence
 

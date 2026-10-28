@@ -3,7 +3,7 @@ use crate::config::VersionSyncConfig;
 use std::time::{SystemTime, UNIX_EPOCH};
 mod metadata;
 
-/// Patch releases tried per check once the game refuses the client version.
+/// Patch releases guessed per check after both named sources are unavailable or rejected.
 const CLIENT_CANDIDATES: u32 = 3;
 
 pub(super) fn client_update_required(error: &ClientError) -> bool {
@@ -74,36 +74,89 @@ impl ManagedClient {
         let mut result = client
             .refresh_versions(generation, self.stop.child_token())
             .await;
-        let mut followed = None;
-        if follow_client_updates && matches!(&result, Err(error) if client_update_required(error)) {
+        let mut followed: Option<(String, String, &'static str)> = None;
+        if follow_client_updates
+            && let Err(error) = &result
+            && client_update_required(error)
+        {
             let session = client.session_config();
             let previous = session.client_version;
-            let advertised = metadata
-                .candidate(&session.region, &previous, self.stop.child_token())
-                .await;
-            let mut candidates: Vec<_> = advertised.iter().cloned().collect();
-            for candidate in moenotes_client::patch_successors(&previous, CLIENT_CANDIDATES) {
-                if !candidates.contains(&candidate) {
-                    candidates.push(candidate);
-                }
-            }
-            for candidate in candidates {
+            // The release the game names is the most direct, credential-free signal and
+            // needs no external request. Only a strictly newer value is usable: the
+            // header is untrusted and must never downgrade the session.
+            let recommended = error
+                .recommended_client_version()
+                .filter(|candidate| moenotes_client::is_newer_release(candidate, &previous))
+                .map(str::to_owned);
+            let mut tried: Vec<String> = recommended
+                .iter()
+                .filter_map(|candidate| moenotes_client::normalize_release(candidate))
+                .collect();
+            if let Some(candidate) = &recommended {
                 match client
-                    .adopt_client_version(generation, &candidate, self.stop.child_token())
+                    .adopt_client_version(generation, candidate, self.stop.child_token())
                     .await
                 {
-                    Err(error) if client_update_required(&error) => continue,
-                    outcome => {
-                        if outcome.is_ok() {
-                            let source = if advertised.as_deref() == Some(candidate.as_str()) {
-                                "metadata"
-                            } else {
-                                "patch_probe"
-                            };
-                            followed = Some((previous.clone(), candidate, source));
+                    // Maintenance is authoritative: the named release exists but is
+                    // still rolling out, so wait for the next check.
+                    Err(error) if error.kind == ErrorKind::Maintenance => result = Err(error),
+                    // Any other answer leaves the untrusted recommendation behind and
+                    // lets the fallbacks below try.
+                    Err(_) => {}
+                    Ok(changed) => {
+                        followed = Some((previous.clone(), candidate.clone(), "recommended"));
+                        result = Ok(changed);
+                    }
+                }
+            }
+            if followed.is_none() && matches!(&result, Err(error) if client_update_required(error))
+            {
+                // The published metadata snapshot is the cross-region fallback.
+                let advertised = metadata
+                    .candidate(&session.region, &previous, self.stop.child_token())
+                    .await;
+                if let Some(candidate) = advertised.filter(|candidate| {
+                    moenotes_client::normalize_release(candidate)
+                        .is_none_or(|key| !tried.contains(&key))
+                }) {
+                    if let Some(key) = moenotes_client::normalize_release(&candidate) {
+                        tried.push(key);
+                    }
+                    match client
+                        .adopt_client_version(generation, &candidate, self.stop.child_token())
+                        .await
+                    {
+                        Err(error) if client_update_required(&error) => {}
+                        Err(error) => result = Err(error),
+                        Ok(changed) => {
+                            followed = Some((previous.clone(), candidate, "metadata"));
+                            result = Ok(changed);
                         }
-                        result = outcome;
-                        break;
+                    }
+                }
+            }
+            if followed.is_none() && matches!(&result, Err(error) if client_update_required(error))
+            {
+                for candidate in moenotes_client::patch_successors(&previous, CLIENT_CANDIDATES) {
+                    let Some(key) = moenotes_client::normalize_release(&candidate) else {
+                        continue;
+                    };
+                    if tried.contains(&key) {
+                        continue;
+                    }
+                    tried.push(key);
+                    match client
+                        .adopt_client_version(generation, &candidate, self.stop.child_token())
+                        .await
+                    {
+                        Err(error) if client_update_required(&error) => continue,
+                        outcome => {
+                            if outcome.is_ok() {
+                                followed = Some((previous.clone(), candidate, "patch_probe"));
+                            }
+                            result = outcome;
+                            break;
+                        }
                     }
                 }
             }
@@ -400,6 +453,17 @@ mod tests {
         )
         .unwrap()
     }
+    fn version_error_with_recommended(code: &'static str, recommended: &str) -> ClientError {
+        let mut headers = MetadataMap::new();
+        headers.insert("x-sirius-error-code", code.parse().unwrap());
+        headers.insert("x-client-recommended-version", recommended.parse().unwrap());
+        ClientError::from_metadata(
+            tonic::Code::FailedPrecondition,
+            &headers,
+            &MetadataMap::new(),
+        )
+        .unwrap()
+    }
     fn release(configured: &str, live: &str) -> (Arc<Client>, Arc<ManagedClient>, Arc<Release>) {
         release_in_region(configured, live, "test")
     }
@@ -455,6 +519,125 @@ mod tests {
         });
         (client, managed, mock)
     }
+    #[tokio::test]
+    async fn follows_the_release_named_by_the_game_across_a_minor_update() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.6", "1.1.0");
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.1.0");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        // The recommendation is tried first instead of guessing 1.0.7..1.0.9.
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.6", "1.1.0"]);
+        assert_eq!(client.session_config().client_version, "1.1.0");
+        assert_eq!(
+            client.session_config().master_version.as_deref(),
+            Some("master-1.1.0")
+        );
+        let status = managed.status().version_sync.unwrap();
+        assert_eq!(status.client_updates, 1);
+        assert_eq!(status.last_error, None);
+    }
+
+    #[tokio::test]
+    async fn ignores_a_recommendation_equal_to_the_presented_release() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.6", "1.0.8");
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.0.6");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.6", "1.0.7", "1.0.8"]);
+        assert_eq!(client.session_config().client_version, "1.0.8");
+    }
+
+    #[tokio::test]
+    async fn ignores_a_recommendation_older_than_the_presented_release() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.6", "1.0.7");
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.0.5");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        // An untrusted stale header must not downgrade or be probed at all.
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.6", "1.0.7"]);
+        assert_eq!(client.session_config().client_version, "1.0.7");
+    }
+
+    #[tokio::test]
+    async fn a_recommendation_that_succeeds_does_not_fetch_metadata() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.6", "1.1.0");
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.1.0");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(fixture.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        assert_eq!(client.session_config().client_version, "1.1.0");
+    }
+
+    #[tokio::test]
+    async fn a_rejected_recommendation_still_falls_back_to_metadata() {
+        let fixture = metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{
+            "en":{"client_version":"1.0.5"}
+        }}))
+        .await;
+        let (client, managed, mock) = release_in_region("1.0.3", "1.0.5", "en");
+        // The game refuses this recommendation with the same client-update code; the
+        // untrusted value must not stop the metadata fallback.
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.0.4");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", "1.0.4", "1.0.5"]);
+        assert_eq!(client.session_config().client_version, "1.0.5");
+        assert_eq!(managed.status().version_sync.unwrap().last_error, None);
+    }
+
+    #[tokio::test]
+    async fn maintenance_for_the_recommended_release_stops_the_search() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.3", "1.1.0");
+        *mock.maintenance.lock().unwrap() = true;
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.1.0");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        // The release exists but is still rolling out: wait, do not probe patches.
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.3", "1.1.0"]);
+        assert_eq!(client.session_config().client_version, "1.0.3");
+        assert_eq!(
+            managed.status().version_sync.unwrap().last_error,
+            Some(ErrorKind::Maintenance)
+        );
+    }
+
+    #[tokio::test]
+    async fn numerically_equal_candidates_are_not_probed_twice() {
+        let fixture =
+            metadata::tests::fixture(serde_json::json!({"schema_version":1,"regions":{}})).await;
+        let (client, managed, mock) = release("1.0.5", "1.0.7");
+        // Numerically 1.0.6, which the patch fallback would otherwise probe again.
+        *mock.rejection.lock().unwrap() =
+            version_error_with_recommended("CLIENT_UPDATE_REQUIRED", "1.0.06");
+        managed
+            .sync_versions_with_metadata(&client, true, &fixture.source)
+            .await;
+        assert_eq!(*mock.seen.lock().unwrap(), ["1.0.5", "1.0.06", "1.0.7"]);
+        assert_eq!(client.session_config().client_version, "1.0.7");
+    }
+
     #[tokio::test]
     async fn follows_a_patch_release_the_game_accepts() {
         let (client, managed, mock) = release("1.0.3", "1.0.5");

@@ -10,6 +10,16 @@ Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
   official anonymous Version RPC before atomically adopting it and its returned
   data versions; retain bounded patch probing as a fallback. Share bounded,
   credential-free metadata fetches across pool members and log the update source.
+- Before that metadata lookup, also follow the release the game names in
+  `x-client-recommended-version`, which is the most direct and credential-free
+  signal for a minor/major update (`1.0.6` -> `1.1.0`). Only a strictly newer
+  `MAJOR.MINOR.PATCH` value is used; older, equal or unparseable values are ignored,
+  and a maintenance answer stops the search. `ClientError::recommended_client_version`
+  exposes it; `Debug` still redacts it. Patch guessing stays as the last fallback,
+  and `client_version_update` now reports `recommended`, `metadata` or `patch_probe`.
+- Add `moenotes_client::is_newer_release` and `normalize_release` for comparing and
+  deduplicating `MAJOR.MINOR.PATCH` candidates without treating formatting
+  differences (`1.0.06` vs `1.0.6`) as distinct releases.
 
 ## 0.1.0-alpha.11 - 2026-09-30
 

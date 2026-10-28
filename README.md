@@ -61,8 +61,8 @@ Release images are published to the public GitHub Container Registry package
 is required to pull public images:
 
 ```sh
-docker pull ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.11
-docker run --rm --network none ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.11 --version
+docker pull ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.12
+docker run --rm --network none ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.12 --version
 ```
 
 Use an exact version or the immutable digest listed in the GitHub Release.
@@ -145,11 +145,12 @@ Fully configured servers now discover master/resource versions anonymously at
 startup and every 60 seconds. Existing account sessions are preserved, and the
 effective versions are visible in `/v1/status`. This does not log in or renew SDK
 credentials. Set `[version_sync] enabled=false` to disable discovery. Opt-in
-`follow_client_updates = true` also reads the regional client version from
-`https://metadata.bdon.moe/current_version.json` once the game refuses the
-configured one, validates it with the anonymous Version call, and falls back to
-the next three patch releases if metadata is unavailable; see
-[following client releases](docs/configuration.md#following-client-releases).
+`follow_client_updates = true` also follows the release the game names in
+`x-client-recommended-version`, then reads the regional client version from
+`https://metadata.bdon.moe/current_version.json`, once the game refuses the
+configured one. Each candidate is validated with the anonymous Version call, and
+the poller falls back to the next three patch releases when both are unavailable;
+see [following client releases](docs/configuration.md#following-client-releases).
 
 Since `0.1.0-alpha.4`, one `config.toml` holds the HTTP key, game session,
 device context and SDK HTTP settings. Account passwords remain in `/accounts`.
@@ -215,7 +216,7 @@ docker run --rm --cap-drop ALL --security-opt no-new-privileges \
   --mount type=bind,src=/absolute/operator-config,dst=/etc/moenotes,readonly \
   --mount type=bind,src=/absolute/accounts,dst=/accounts,readonly \
   --mount type=bind,src=/absolute/state,dst=/var/lib/moenotes \
-  ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.11
+  ghcr.io/starmoe-org/moenotes-api:0.1.0-alpha.12
 ```
 
 Set the mounted config's `listen` to `0.0.0.0:8080` inside the container. The image

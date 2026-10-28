@@ -25,7 +25,7 @@ fn valid(value: &str) -> bool {
 }
 
 /// `MAJOR.MINOR.PATCH` with decimal parts, e.g. the store version `1.0.4`.
-fn patch_version(value: &str) -> Option<[u32; 3]> {
+pub(crate) fn patch_version(value: &str) -> Option<[u32; 3]> {
     let mut parts = value.split('.');
     let mut out = [0; 3];
     for part in &mut out {
@@ -36,6 +36,21 @@ fn patch_version(value: &str) -> Option<[u32; 3]> {
         *part = text.parse().ok()?;
     }
     parts.next().is_none().then_some(out)
+}
+
+/// Whether `candidate` is a strictly newer `MAJOR.MINOR.PATCH` release than `current`.
+/// Unparseable values are never newer, so untrusted candidates cannot downgrade a session.
+pub fn is_newer_release(candidate: &str, current: &str) -> bool {
+    match (patch_version(candidate), patch_version(current)) {
+        (Some(candidate), Some(current)) => candidate > current,
+        _ => false,
+    }
+}
+
+/// Canonical `MAJOR.MINOR.PATCH` form for comparing releases that may differ only in
+/// formatting (`1.0.06` -> `1.0.6`). `None` when the value is not a release.
+pub fn normalize_release(value: &str) -> Option<String> {
+    patch_version(value).map(|[major, minor, patch]| format!("{major}.{minor}.{patch}"))
 }
 
 /// The next `count` patch releases after `current` (`1.0.3` -> `1.0.4`, `1.0.5`, ...), for following a
@@ -179,7 +194,21 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
-    use super::patch_successors;
+    use super::{is_newer_release, patch_successors};
+
+    #[test]
+    fn newer_release_requires_a_strict_increase() {
+        assert!(is_newer_release("1.1.0", "1.0.6"));
+        assert!(is_newer_release("1.0.10", "1.0.9"));
+        assert!(!is_newer_release("1.0.6", "1.0.6"));
+        assert!(!is_newer_release("1.0.5", "1.0.6"));
+        // Numerically equal, even with a leading zero.
+        assert!(!is_newer_release("1.0.06", "1.0.6"));
+        for unusable in ["1.1", "1.1.0.1", "latest", ""] {
+            assert!(!is_newer_release(unusable, "1.0.6"), "{unusable}");
+            assert!(!is_newer_release("1.1.0", unusable), "{unusable}");
+        }
+    }
 
     #[test]
     fn patch_successors_only_guess_patch_releases() {

@@ -62,7 +62,7 @@ impl MetadataSource {
             "jp" => "jp",
             _ => return None,
         };
-        let current = version_parts(current)?;
+        moenotes_client::normalize_release(current)?;
         let mut cache = tokio::select! {
             biased;
             _ = cancel.cancelled() => return None,
@@ -86,7 +86,7 @@ impl MetadataSource {
             .get(region)?
             .get("client_version")?
             .as_str()?;
-        (version_parts(candidate)? > current).then(|| candidate.to_owned())
+        moenotes_client::is_newer_release(candidate, current).then(|| candidate.to_owned())
     }
 
     async fn fetch(&self) -> Option<Snapshot> {
@@ -115,19 +115,6 @@ impl MetadataSource {
         let snapshot: Snapshot = serde_json::from_slice(&body).ok()?;
         (snapshot.schema_version == 1).then_some(snapshot)
     }
-}
-
-fn version_parts(value: &str) -> Option<[u32; 3]> {
-    let mut parts = value.split('.');
-    let mut parsed = [0; 3];
-    for part in &mut parsed {
-        let text = parts.next()?;
-        if text.is_empty() || text.len() > 9 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
-            return None;
-        }
-        *part = text.parse().ok()?;
-    }
-    parts.next().is_none().then_some(parsed)
 }
 
 #[cfg(test)]

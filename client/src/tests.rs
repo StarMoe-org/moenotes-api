@@ -468,6 +468,40 @@ fn error_classification_and_unknown_codes() {
     }
 }
 
+#[test]
+fn recommended_client_release_is_parsed_and_redacted() {
+    let mut code = MetadataMap::new();
+    code.insert(
+        "x-sirius-error-code",
+        "CLIENT_UPDATE_REQUIRED".parse().unwrap(),
+    );
+    let mut initial = MetadataMap::new();
+    initial.insert("x-client-recommended-version", "1.0.9".parse().unwrap());
+    let error = ClientError::from_metadata(tonic::Code::Unknown, &initial, &code).unwrap();
+    assert_eq!(error.recommended_client_version(), Some("1.0.9"));
+    assert!(!format!("{error:?}").contains("1.0.9"));
+
+    let mut trailing = MetadataMap::new();
+    trailing.insert("x-client-recommended-version", "1.1.0".parse().unwrap());
+    trailing.insert(
+        "x-sirius-error-code",
+        "CLIENT_UPDATE_REQUIRED".parse().unwrap(),
+    );
+    let error = ClientError::from_metadata(tonic::Code::Unknown, &initial, &trailing).unwrap();
+    assert_eq!(error.recommended_client_version(), Some("1.1.0"));
+
+    for unusable in ["", "latest", "1.1", "1.1.0.1", "1..0", "1.1.1234567890"] {
+        let mut headers = MetadataMap::new();
+        headers.insert("x-client-recommended-version", unusable.parse().unwrap());
+        headers.insert(
+            "x-sirius-error-code",
+            "CLIENT_UPDATE_REQUIRED".parse().unwrap(),
+        );
+        let error = ClientError::from_metadata(tonic::Code::Unknown, &headers, &headers).unwrap();
+        assert_eq!(error.recommended_client_version(), None, "{unusable}");
+    }
+}
+
 struct Rejected {
     calls: AtomicUsize,
 }
