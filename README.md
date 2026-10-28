@@ -23,7 +23,7 @@ an independent project, not an official or endorsed API.
 
 - `moenotes-proto`: reproducible message generation and protobuf JSON reflection
   from a checked-in descriptor snapshot. No `protoc` installation required.
-- `moenotes-client`: 15 audited query operations plus server discovery, version
+- `moenotes-client`: 16 audited query operations plus server discovery, version
   lookup and `Whoami`; HTTPS gRPC, explicit credential injection, cancellation,
   session isolation, bounded serial scheduling and classified errors. Explicit
   Android SDK-callback import, pre-login and game-login exchange have explicit operator commands.

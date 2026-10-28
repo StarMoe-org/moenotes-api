@@ -272,6 +272,7 @@ protobuf default omission; sample shapes below are structural, not real response
 | --- | --- | --- |
 | `/v1/event/ranking` | `eventId`, repeated `ranks` | `ranking[]`: `profile`, `rank` (int32), `point` (int32) |
 | `/v1/event/challenge-ranking` | `challengeMusicId` | `players[]`: `playerData`, `score` (int32), `highScoreDeck` |
+| `/v1/event/challenge-total-ranking` | `eventId` | `players[]`: `playerData`, `score` (int32), `highScoreDeck` |
 | `/v1/music/ranking` | `musicId` | `players[]`: `playerData`, `score` (int32), `highScoreDeck` |
 | `/v1/arena/ranking` | `arenaSeasonId`, `rankingStart`, `rankingEnd`; optional `bandId` | `ranking[]`: `profile`, `deck`, `rank` (int32), `point` (int32); `maxRank` (int64 string) |
 
@@ -279,6 +280,28 @@ Music/challenge rows have no `rank` field, nor do those routes accept a requeste
 rank range or difficulty. List position is not a documented tie-aware server rank.
 Raw mode additionally exposes music `myRank` (int32) and challenge `myRank` and
 `myScore` (both int32); public mode removes them.
+
+### Challenge total ranking
+
+`/v1/event/challenge-total-ranking` is one board per **event**, not per song:
+`GetChallengeMusicTotalRanking` in the 1.1.0 protocol snapshot. It takes only
+`eventId`; there is no rank range, pagination or difficulty parameter. Rows use
+the same `playerData`/`score`/`highScoreDeck` shape as the per-song boards and
+carry no `rank` field, so list position is again not a tie-aware server rank.
+
+The gateway forwards the request and projects the response; it does not compute
+the total. How the upstream combines each event song's best score is not verified,
+and neither is the number of rows it returns (the client UI requests 100) or
+whether positions beyond the returned window are reachable. An empty or absent
+`players` list is not evidence that the board is disabled. The event-level
+`_isTotalMusicRankingDisabled` master flag and the
+`MasterChallengeMusicTotalRankingReward` cutoffs come from master data; the
+gateway does not read them.
+
+The route exists only in the international 1.1.0 snapshot. The JP 1.0.3 snapshot
+has neither the RPC nor its messages, so `jp` is rejected locally with 400
+`invalid_request` instead of sending an unknown RPC. Live behavior for an event
+whose total board is disabled remains unverified.
 
 Arena request fields are int64 decimal strings. `arenaSeasonId` and range bounds
 must be positive, `rankingEnd >= rankingStart`, and

@@ -51,11 +51,15 @@ pub fn document_for(mode: crate::projection::ResponseMode) -> Value {
         for (name, field) in [
             ("app.event.GetChallengeMusicRankingResponse", "myRank"),
             ("app.event.GetChallengeMusicRankingResponse", "myScore"),
+            ("app.event.GetChallengeMusicTotalRankingResponse", "myRank"),
+            ("app.event.GetChallengeMusicTotalRankingResponse", "myScore"),
             ("app.livemusic.GetRankingResponse", "myRank"),
             (
                 "app.player.GetPlayerFavoriteStatusResponse",
                 "isSentFavorite",
             ),
+            // Added in the 1.1.0 snapshot but not in the public allowlist.
+            ("entity.Announcement", "platform"),
         ] {
             if let Some(properties) = schemas
                 .get_mut(name)

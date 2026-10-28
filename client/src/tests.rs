@@ -58,6 +58,7 @@ fn fixtures() -> Vec<(&'static str, serde_json::Value)> {
         ("circle-recommendations", json!({})),
         ("circle-search", json!({"options":{"name":" synthetic "}})),
         ("challenge-ranking", json!({"challengeMusicId":"5"})),
+        ("challenge-total-ranking", json!({"eventId":"5"})),
         (
             "event-deck",
             json!({"playerId":"synthetic-player","eventId":"5"}),
@@ -187,14 +188,14 @@ async fn all_queries_over_local_grpc_and_conditional_headers() {
             );
         }
     }
-    assert_eq!(calls.lock().unwrap().len(), 18);
+    assert_eq!(calls.lock().unwrap().len(), 19);
     let ids = calls
         .lock()
         .unwrap()
         .iter()
         .map(|(_, _, m)| m.get("x-request-id").unwrap().to_str().unwrap().to_owned())
         .collect::<std::collections::HashSet<_>>();
-    assert_eq!(ids.len(), 18);
+    assert_eq!(ids.len(), 19);
     drop(client);
     stop.cancel();
     server.await.unwrap();
@@ -446,7 +447,7 @@ fn origins_credentials_and_strict_requests() {
         .is_err()
     );
     assert!(Query::from_json("circle-search", serde_json::json!({})).is_err());
-    assert_eq!(METHODS.iter().filter(|m| m.http).count(), 15);
+    assert_eq!(METHODS.iter().filter(|m| m.http).count(), 16);
 }
 
 #[test]

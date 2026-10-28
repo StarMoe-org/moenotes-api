@@ -2,6 +2,25 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
+## Unreleased
+
+- Refresh the bundled protocol snapshot to the Android 1.1.0 sample: 125 files,
+  57 services and 276 unary methods. Keep the 1.0.1 `PlayerService/Whoami` and
+  `MemberCardService/LinkSkillLevelUp` definitions, which 1.1.0 no longer
+  declares, so the existing client surface is unchanged; record the retention in
+  `proto/NOTICE.md`.
+- Add the audited `challenge-total-ranking` query and
+  `GET /v1/event/challenge-total-ranking?eventId=...` plus the readable alias
+  `/v1/event/{eventId}/challenge-total-ranking`. It is the 1.1.0 per-event
+  total-score board (`GetChallengeMusicTotalRanking`), not a per-song board.
+  Public mode keeps `players[].playerData/score/highScoreDeck` and removes
+  `myRank`/`myScore`; `jp` rejects the query locally because the JP 1.0.3
+  snapshot has no such RPC.
+- Accept the new optional `bandId` on `/v1/arena/deck-trend`, report `musicId` as
+  deprecated as the 1.1.0 descriptor does, and prune the new
+  `entity.Announcement.platform` field from the public schema. These follow from
+  the snapshot refresh; see `docs/api-stability.md` for the compatibility review.
+
 ## 0.1.0-alpha.12 - 2026-10-28
 
 - Prefer each region's newer client version from

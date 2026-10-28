@@ -72,6 +72,11 @@ pub(crate) const ROUTES: &[Route] = &[
         fields: &[("challengeMusicId", "challengeMusicId", false)],
     },
     Route {
+        path: "/v1/event/{eventId}/challenge-total-ranking",
+        method: "challenge-total-ranking",
+        fields: &[("eventId", "eventId", false)],
+    },
+    Route {
         path: "/v1/event/{eventId}/deck/{playerId}",
         method: "event-deck",
         fields: &[

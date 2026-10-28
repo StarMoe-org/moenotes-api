@@ -125,7 +125,7 @@ along with formatting and all-target Clippy with warnings denied.
 Query tests cover repeated array ordering/duplicates, exact 64-bit IDs, optional
 presence, dotted filters, enums, invalid percent encoding/UTF-8, duplicate scalars,
 unknown fields, size limits, GET bodies, removed routes, method rejection and
-cache-key equivalence. OpenAPI declares all fifteen GET operations and parameters.
+cache-key equivalence. OpenAPI declared all fifteen GET operations that existed at that time.
 
 An authorized smoke test with a saved game session returned HTTP 200 for profile
 and announcement GETs, MISS then HIT for the profile, 401 without a key, 400 for

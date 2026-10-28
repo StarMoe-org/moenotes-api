@@ -1,4 +1,4 @@
-//! Protocol snapshot for the Android com.bilibili.sirius 1.0.1 sample.
+//! Protocol snapshot for the Android com.bilibili.sirius 1.1.0 sample.
 //! Generated types are experimental. This is not an official API contract.
 
 use prost_reflect::{DescriptorPool, DynamicMessage};
@@ -41,10 +41,10 @@ mod tests {
 
     #[test]
     fn snapshot_and_int64_json() {
-        assert_eq!(pool().files().count(), 123);
+        assert_eq!(pool().files().count(), 125);
         assert_eq!(
             pool().services().map(|s| s.methods().len()).sum::<usize>(),
-            261
+            276
         );
         let mut message = DynamicMessage::new(
             pool()
@@ -90,5 +90,93 @@ mod tests {
         )
         .unwrap();
         assert_eq!(to_json(&msg).unwrap()["products"]["9007199254740993"], 7);
+    }
+
+    #[test]
+    fn challenge_total_ranking_is_reflected() {
+        let service = pool()
+            .get_service_by_name("app.event.EventService")
+            .unwrap();
+        let rpc = service
+            .methods()
+            .find(|m| m.name() == "GetChallengeMusicTotalRanking")
+            .unwrap();
+        assert_eq!(
+            rpc.input().full_name(),
+            "app.event.GetChallengeMusicTotalRankingRequest"
+        );
+        assert_eq!(
+            rpc.output().full_name(),
+            "app.event.GetChallengeMusicTotalRankingResponse"
+        );
+        let request = rpc.input();
+        let event = request.get_field_by_name("event_id").unwrap();
+        assert_eq!(event.number(), 1);
+        assert_eq!(event.kind(), prost_reflect::Kind::Int64);
+        let response = rpc.output();
+        let players = response.get_field_by_name("players").unwrap();
+        assert!(players.is_list());
+        assert_eq!(players.number(), 1);
+        assert_eq!(
+            players.kind().as_message().unwrap().full_name(),
+            "app.event.ChallengeMusicTotalRankingPlayer"
+        );
+        assert_eq!(response.get_field_by_name("my_rank").unwrap().number(), 2);
+        assert_eq!(response.get_field_by_name("my_score").unwrap().number(), 3);
+        let row = pool()
+            .get_message_by_name("app.event.ChallengeMusicTotalRankingPlayer")
+            .unwrap();
+        assert_eq!(
+            row.get_field_by_name("player_data")
+                .unwrap()
+                .kind()
+                .as_message()
+                .unwrap()
+                .full_name(),
+            "entity.PlayerSimpleProfile"
+        );
+        assert_eq!(row.get_field_by_name("score").unwrap().number(), 2);
+        assert_eq!(
+            row.get_field_by_name("high_score_deck")
+                .unwrap()
+                .kind()
+                .as_message()
+                .unwrap()
+                .full_name(),
+            "entity.DeckDetail"
+        );
+    }
+
+    /// The 1.1.0 client descriptors no longer contain these; the snapshot keeps
+    /// them so the existing gateway surface does not silently lose an endpoint.
+    #[test]
+    fn methods_absent_from_1_1_0_are_retained() {
+        let player = pool()
+            .get_service_by_name("app.player.PlayerService")
+            .unwrap();
+        let whoami = player
+            .methods()
+            .find(|m| m.name() == "Whoami")
+            .expect("Whoami retained from 1.0.1");
+        assert_eq!(whoami.input().full_name(), "app.player.WhoamiRequest");
+        assert_eq!(whoami.output().full_name(), "app.player.WhoamiResponse");
+        assert!(
+            pool()
+                .get_message_by_name("app.player.WhoamiRequest")
+                .is_some()
+        );
+        assert_eq!(
+            pool()
+                .get_message_by_name("app.player.WhoamiResponse")
+                .unwrap()
+                .get_field_by_name("player_id")
+                .unwrap()
+                .kind(),
+            prost_reflect::Kind::String
+        );
+        let membercard = pool()
+            .get_service_by_name("app.membercard.MemberCardService")
+            .unwrap();
+        assert!(membercard.methods().any(|m| m.name() == "LinkSkillLevelUp"));
     }
 }

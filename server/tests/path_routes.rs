@@ -263,6 +263,10 @@ async fn path_aliases_encode_the_same_requests_as_legacy_routes() {
             "/v1/event/challenge-ranking?challengeMusicId=8",
         ),
         (
+            "/v1/event/123/challenge-total-ranking",
+            "/v1/event/challenge-total-ranking?eventId=123",
+        ),
+        (
             "/v1/event/123/deck/player%2Bid",
             "/v1/event/deck?eventId=123&playerId=player%2Bid",
         ),
@@ -302,8 +306,8 @@ async fn path_aliases_encode_the_same_requests_as_legacy_routes() {
     }
     let tw = tw.calls.lock().unwrap();
     let en = en.calls.lock().unwrap();
-    assert_eq!(tw.len(), 15);
-    assert_eq!(en.len(), 15);
+    assert_eq!(tw.len(), 16);
+    assert_eq!(en.len(), 16);
     for (a, b) in tw.iter().zip(en.iter()) {
         assert_eq!(a.method().name, b.method().name);
         assert_eq!(a.encode(), b.encode());

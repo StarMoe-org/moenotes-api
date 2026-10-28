@@ -92,12 +92,12 @@ fn allowed(message: &str) -> &'static [&'static str] {
         ],
         "app.circle.SearchResponse" => &["circles"],
         "entity.CircleWithMasterPlayer" => &["circle", "profile"],
-        "app.event.GetChallengeMusicRankingResponse" | "app.livemusic.GetRankingResponse" => {
-            &["players"]
-        }
-        "app.event.ChallengeLiveRankingPlayer" | "app.livemusic.LiveRankingPlayer" => {
-            &["playerData", "score", "highScoreDeck"]
-        }
+        "app.event.GetChallengeMusicRankingResponse"
+        | "app.event.GetChallengeMusicTotalRankingResponse"
+        | "app.livemusic.GetRankingResponse" => &["players"],
+        "app.event.ChallengeLiveRankingPlayer"
+        | "app.event.ChallengeMusicTotalRankingPlayer"
+        | "app.livemusic.LiveRankingPlayer" => &["playerData", "score", "highScoreDeck"],
         "app.event.GetDeckResponse" => &["deck"],
         "app.event.GetRankingListResponse" => &["ranking"],
         "app.event.EventRankingEntry" => &["profile", "rank", "point"],
@@ -213,6 +213,29 @@ mod tests {
             json!({"totalFavorite":"9"})
         );
         assert!(!permitted(ResponseMode::Public, "circle-recommendations"));
+    }
+    #[test]
+    fn challenge_total_ranking_drops_personal_fields_but_keeps_rows() {
+        let value = json!({
+            "players": [
+                {"playerData": {"name": "synthetic", "profileId": "9007199254740993", "credential": "no"},
+                 "score": 123456, "highScoreDeck": {"id": "1", "totalPower": "9", "credential": "no"},
+                 "newSecret": "no"},
+                {"score": 1}
+            ],
+            "myRank": 7,
+            "myScore": 123456
+        });
+        let out = project("challenge-total-ranking", &value).unwrap();
+        assert_eq!(
+            out,
+            json!({"players": [
+                {"playerData": {"name": "synthetic", "profileId": "9007199254740993"},
+                 "score": 123456, "highScoreDeck": {"id": "1", "totalPower": "9"}},
+                {"score": 1}
+            ]})
+        );
+        assert!(!out.to_string().contains("no"));
     }
     #[test]
     fn maps_and_presence_remain_intact() {

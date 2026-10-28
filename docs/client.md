@@ -4,7 +4,7 @@
 
 The checked-in descriptor is the source of truth for wire field numbers, types,
 presence and RPC paths. `moenotes-proto::generated` contains prost message types.
-`Query` enumerates the 15 HTTP-eligible operations and three support operations;
+`Query` enumerates the 16 HTTP-eligible operations and three support operations;
 its variants accept the corresponding generated request type. The client exposes
 `Client::query` and cancellable `QueryClient::execute`, not gameplay write APIs.
 Explicit authentication methods are separate; see [SDK login](sdk-login.md).

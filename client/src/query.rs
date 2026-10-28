@@ -61,6 +61,7 @@ queries! {
     CircleRecommendations, app::circle::GetRecommendedCircleListRequest, "circle-recommendations", "app.circle.CircleService", "GetRecommendedCircleList", "app.circle.GetRecommendedCircleListRequest", "app.circle.GetRecommendedCircleListResponse", false, true;
     CircleSearch, app::circle::SearchRequest, "circle-search", "app.circle.CircleService", "Search", "app.circle.SearchRequest", "app.circle.SearchResponse", false, true;
     ChallengeRanking, app::event::GetChallengeMusicRankingRequest, "challenge-ranking", "app.event.EventService", "GetChallengeMusicRanking", "app.event.GetChallengeMusicRankingRequest", "app.event.GetChallengeMusicRankingResponse", false, true;
+    ChallengeTotalRanking, app::event::GetChallengeMusicTotalRankingRequest, "challenge-total-ranking", "app.event.EventService", "GetChallengeMusicTotalRanking", "app.event.GetChallengeMusicTotalRankingRequest", "app.event.GetChallengeMusicTotalRankingResponse", false, true;
     EventDeck, app::event::GetDeckRequest, "event-deck", "app.event.EventService", "GetDeck", "app.event.GetDeckRequest", "app.event.GetDeckResponse", false, true;
     EventRanking, app::event::GetRankingListRequest, "event-ranking", "app.event.EventService", "GetRankingList", "app.event.GetRankingListRequest", "app.event.GetRankingListResponse", false, true;
     Profile, app::friend::FindByProfileIdRequest, "profile", "app.friend.FriendService", "FindByProfileID", "app.friend.FindByProfileIDRequest", "app.friend.FindByProfileIDResponse", false, true;
@@ -84,6 +85,10 @@ impl Query {
             if matches!(self, Self::ServerList(_)) {
                 return Err(invalid());
             }
+            // The JP client (1.0.3) has no total-music-ranking RPC or message.
+            if matches!(self, Self::ChallengeTotalRanking(_)) {
+                return Err(invalid());
+            }
             if matches!(self, Self::Profiles(_)) {
                 method.path = "/app.player.PlayerService/GetPlayerList";
                 method.input = "app.player.GetPlayerListRequest";
@@ -104,10 +109,14 @@ impl Query {
                     && r.ranking_end >= r.ranking_start
                     && r.ranking_end - r.ranking_start < 100
             }
+            // 1.1.0 marks arena_music_id/music_id deprecated and adds band_id, but the
+            // gateway keeps the established request shape until live evidence exists.
+            #[allow(deprecated)]
             Self::DeckTrend(r) => r.music_id > 0 && r.arena_season_id > 0,
             Self::Circle(r) => r.circle_id > 0,
             Self::CircleSearch(r) => r.options.as_ref().is_some_and(|o| o.name.len() <= 256),
             Self::ChallengeRanking(r) => r.challenge_music_id > 0,
+            Self::ChallengeTotalRanking(r) => r.event_id > 0,
             Self::EventDeck(r) => r.event_id > 0 && valid_player(&r.player_id),
             Self::EventRanking(r) => {
                 r.event_id > 0

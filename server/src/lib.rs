@@ -47,6 +47,10 @@ pub const ROUTES: &[(&str, &str)] = &[
     ("/v1/circles/recommended", "circle-recommendations"),
     ("/v1/circles/search", "circle-search"),
     ("/v1/event/challenge-ranking", "challenge-ranking"),
+    (
+        "/v1/event/challenge-total-ranking",
+        "challenge-total-ranking",
+    ),
     ("/v1/event/deck", "event-deck"),
     ("/v1/event/ranking", "event-ranking"),
     ("/v1/profile", "profile"),

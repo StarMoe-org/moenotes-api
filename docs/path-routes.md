@@ -42,6 +42,7 @@ region, e.g. `/v1/en/event/123/ranking/1,10,100`.
 | Music ranking | `/v1/music/69/ranking` |
 | Event point cutoffs | `/v1/event/123/ranking/1,10,100` |
 | Challenge ranking | `/v1/event/challenge/8/ranking` |
+| Challenge total ranking (event) | `/v1/event/4/challenge-total-ranking` |
 | Event deck (player ID) | `/v1/event/123/deck/example-player-id` |
 | Arena ranking range | `/v1/arena/7/ranking/1/100` |
 | Arena ranking with band filter | `/v1/arena/7/ranking/1/100/band/2` |

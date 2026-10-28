@@ -117,6 +117,16 @@ fn paths_asset_selection_and_credential_binding() {
             .method_for_region("jp")
             .is_err()
     );
+    // 1.1.0 added the total-music-ranking RPC; the JP 1.0.3 snapshot has neither
+    // the RPC nor its messages, so it is rejected before any upstream request.
+    let total = Query::ChallengeTotalRanking(
+        moenotes_proto::generated::app::event::GetChallengeMusicTotalRankingRequest { event_id: 4 },
+    );
+    assert!(total.method_for_region("jp").is_err());
+    assert_eq!(
+        total.method_for_region("tw").unwrap().path,
+        "/app.event.EventService/GetChallengeMusicTotalRanking"
+    );
 }
 #[tokio::test]
 async fn version_registration_persistence_and_override_are_explicit() {

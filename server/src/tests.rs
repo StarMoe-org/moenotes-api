@@ -29,6 +29,7 @@ fn v1_public_openapi_contract_is_frozen() {
             "/v1/circles/recommended",
             "/v1/circles/search",
             "/v1/event/challenge-ranking",
+            "/v1/event/challenge-total-ranking",
             "/v1/event/deck",
             "/v1/event/ranking",
             "/v1/profile",
@@ -395,6 +396,7 @@ async fn all_http_routes_and_openapi() {
         serde_json::json!({}),
         serde_json::json!({"options":{}}),
         serde_json::json!({"challengeMusicId":"1"}),
+        serde_json::json!({"eventId":"1"}),
         serde_json::json!({"playerId":"synthetic","eventId":"1"}),
         serde_json::json!({"eventId":"1","ranks":[1,10]}),
         serde_json::json!({"playerProfileId":"1"}),
@@ -415,7 +417,7 @@ async fn all_http_routes_and_openapi() {
             "{path}"
         );
     }
-    assert_eq!(fake.calls.load(Ordering::SeqCst), 15);
+    assert_eq!(fake.calls.load(Ordering::SeqCst), 16);
     let response = enabled
         .oneshot(
             Request::builder()
@@ -428,7 +430,7 @@ async fn all_http_routes_and_openapi() {
         .unwrap();
     let json: serde_json::Value =
         serde_json::from_slice(&response.into_body().collect().await.unwrap().to_bytes()).unwrap();
-    assert_eq!(json["paths"].as_object().unwrap().len(), 161);
+    assert_eq!(json["paths"].as_object().unwrap().len(), 171);
     for (path, name) in ROUTES {
         let method = moenotes_client::METHODS
             .iter()

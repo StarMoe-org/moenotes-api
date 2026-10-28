@@ -105,6 +105,10 @@
             "pattern": "^-?[0-9]+$",
             "type": "string"
           },
+          "bandId": {
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
+          },
           "musicId": {
             "pattern": "^-?[0-9]+$",
             "type": "string"
@@ -208,6 +212,21 @@
         },
         "type": "object"
       },
+      "app.event.ChallengeMusicTotalRankingPlayer": {
+        "additionalProperties": false,
+        "properties": {
+          "highScoreDeck": {
+            "$ref": "#/components/schemas/entity.DeckDetail"
+          },
+          "playerData": {
+            "$ref": "#/components/schemas/entity.PlayerSimpleProfile"
+          },
+          "score": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
       "app.event.EventRankingEntry": {
         "additionalProperties": false,
         "properties": {
@@ -239,6 +258,28 @@
           "players": {
             "items": {
               "$ref": "#/components/schemas/app.event.ChallengeLiveRankingPlayer"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "app.event.GetChallengeMusicTotalRankingRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "eventId": {
+            "pattern": "^-?[0-9]+$",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "app.event.GetChallengeMusicTotalRankingResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "players": {
+            "items": {
+              "$ref": "#/components/schemas/app.event.ChallengeMusicTotalRankingPlayer"
             },
             "type": "array"
           }
@@ -1176,7 +1217,7 @@
         "operationId": "deck-trend",
         "parameters": [
           {
-            "deprecated": false,
+            "deprecated": true,
             "description": "Single occurrence only. Nested filters use dotted field names.",
             "explode": true,
             "in": "query",
@@ -1195,6 +1236,19 @@
             "in": "query",
             "name": "arenaSeasonId",
             "required": true,
+            "schema": {
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "deprecated": false,
+            "description": "Single occurrence only. Nested filters use dotted field names.",
+            "explode": true,
+            "in": "query",
+            "name": "bandId",
+            "required": false,
             "schema": {
               "pattern": "^-?[0-9]+$",
               "type": "string"
@@ -1665,6 +1719,91 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/app.event.GetChallengeMusicRankingResponse"
+                }
+              }
+            },
+            "description": "Raw protobuf JSON; 64-bit integers are strings. Fetch time is Unix milliseconds.",
+            "headers": {
+              "X-Moenotes-Cache": {
+                "schema": {
+                  "enum": [
+                    "HIT",
+                    "MISS",
+                    "COALESCED"
+                  ],
+                  "type": "string"
+                }
+              },
+              "X-Moenotes-Fetched-At": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query"
+          },
+          "401": {
+            "description": "Missing or invalid HTTP API key"
+          },
+          "403": {
+            "description": "Route prohibited by response policy"
+          },
+          "404": {
+            "description": "Route disabled or unknown"
+          },
+          "405": {
+            "description": "Only GET is supported; HEAD does not query upstream"
+          },
+          "429": {
+            "description": "Local request queue full"
+          },
+          "502": {
+            "description": "Upstream business, transport or protocol error"
+          },
+          "503": {
+            "description": "Upstream session or availability blocked"
+          },
+          "504": {
+            "description": "Request deadline exceeded"
+          }
+        },
+        "security": [
+          {
+            "apiKey": []
+          }
+        ],
+        "tags": [
+          "read queries"
+        ]
+      }
+    },
+    "/v1/event/challenge-total-ranking": {
+      "get": {
+        "description": "No request body. Public mode removes unapproved/account-specific fields; raw mode is operator-only. Query string limited to 8192 bytes and 256 parameters.",
+        "operationId": "challenge-total-ranking",
+        "parameters": [
+          {
+            "deprecated": false,
+            "description": "Single occurrence only. Nested filters use dotted field names.",
+            "explode": true,
+            "in": "query",
+            "name": "eventId",
+            "required": true,
+            "schema": {
+              "pattern": "^-?[0-9]+$",
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/app.event.GetChallengeMusicTotalRankingResponse"
                 }
               }
             },

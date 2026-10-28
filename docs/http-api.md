@@ -80,6 +80,7 @@ encoding for text; a literal `+` must be encoded as `%2B`.
 | `/music/ranking` | `musicId` |
 | `/event/ranking` | `eventId`, repeated `ranks` (int32) |
 | `/event/challenge-ranking` | `challengeMusicId` |
+| `/event/challenge-total-ranking` | `eventId` |
 | `/event/deck` | `playerId` (string), `eventId` |
 | `/arena/ranking` | `arenaSeasonId`, `rankingStart`, `rankingEnd`, optional `bandId` |
 | `/arena/deck-trend` | `musicId`, `arenaSeasonId` |

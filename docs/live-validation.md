@@ -78,9 +78,10 @@ itself was verified with offline tests, not yet by a deployed rollout.
 | Event ranking, challenge ranking, event deck | Not sent: current sampled event/challenge tables were empty |
 | Arena ranking, deck trend | Not sent: current sampled season table was empty |
 
-Nine of the fifteen HTTP-eligible query types have successful samples in this
+Nine of the fifteen HTTP-eligible query types available at that time have successful samples in this
 batch. These checks invoked the same Rust client used by the gateway, not all
-fifteen HTTP handlers against the live upstream. Earlier gateway checks separately
+fifteen HTTP handlers against the live upstream. The later challenge total-ranking
+route has no live sample yet. Earlier gateway checks separately
 verified authenticated HTTP profile lookup and API-key rejection.
 
 After the GET migration, a separate gateway smoke confirmed `/v1/profile` and
