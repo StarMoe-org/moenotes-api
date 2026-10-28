@@ -2,7 +2,7 @@
 
 Version numbers follow MAJOR.MINOR.PATCH. Pre-release APIs are experimental.
 
-## Unreleased
+## 0.1.0-alpha.12 - 2026-10-28
 
 - Prefer each region's newer client version from
   `https://metadata.bdon.moe/current_version.json` when opt-in client release
